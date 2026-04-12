@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(cmd.exe /c \"claude --version\")",
+      "Bash(cmd.exe /c \"claude --help\")",
+      "Bash(cmd.exe /c \"where claude\")",
+      "Bash(powershell.exe -Command \"& claude --version\")",
+      "Bash(powershell.exe -Command \"node --version\")",
+      "Bash(powershell.exe -Command \"& 'C:\\\\Program Files\\\\dotnet\\\\dotnet.exe' build 'C:\\\\Kram\\\\repos\\\\MyProject\\\\Aros\\\\src\\\\Aros.App\\\\Aros.App.csproj' -f net9.0-windows10.0.19041.0 2>&1 | Select-String -Pattern 'error CS|Build succeeded|FAILED|warning CS'\")",
+      "Bash(powershell.exe -Command \"Get-ChildItem 'C:\\\\Users\\\\andre\\\\.nuget\\\\packages\\\\microsoft.maui.controls' -ErrorAction SilentlyContinue | Select-Object Name\")",
+      "Bash(powershell.exe -Command \"Get-ChildItem 'C:\\\\Users\\\\andre\\\\.nuget\\\\packages\\\\microsoft.maui.controls\\\\9.0.120' | Select-Object Name\")"
+    ]
+  }
+}
