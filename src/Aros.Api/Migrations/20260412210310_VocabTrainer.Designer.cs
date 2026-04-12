@@ -3,6 +3,7 @@ using System;
 using Aros.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Aros.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260412210310_VocabTrainer")]
+    partial class VocabTrainer
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -33,30 +36,16 @@ namespace Aros.Api.Migrations
                     b.Property<bool>("Correct")
                         .HasColumnType("boolean");
 
-                    b.Property<bool?>("RomajiCorrect")
-                        .HasColumnType("boolean");
-
-                    b.Property<int?>("SelectedVocabEntryId")
-                        .HasColumnType("integer");
-
                     b.Property<int>("TestSessionId")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("TestType")
                         .HasColumnType("integer");
 
                     b.Property<int>("TimeTakenMs")
                         .HasColumnType("integer");
 
-                    b.Property<bool?>("TranslationCorrect")
-                        .HasColumnType("boolean");
-
                     b.Property<int>("VocabEntryId")
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("SelectedVocabEntryId");
 
                     b.HasIndex("TestSessionId");
 
@@ -75,9 +64,6 @@ namespace Aros.Api.Migrations
 
                     b.Property<DateTime>("TakenAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("TestType")
-                        .HasColumnType("integer");
 
                     b.Property<int>("VocabListId")
                         .HasColumnType("integer");
@@ -102,12 +88,6 @@ namespace Aros.Api.Migrations
 
                     b.Property<string>("SourceWord")
                         .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("TargetReading")
-                        .HasColumnType("text");
-
-                    b.Property<string>("TargetRomaji")
                         .HasColumnType("text");
 
                     b.Property<string>("TargetWord")
@@ -154,11 +134,6 @@ namespace Aros.Api.Migrations
 
             modelBuilder.Entity("Aros.Api.Data.Entities.TestAnswer", b =>
                 {
-                    b.HasOne("Aros.Api.Data.Entities.VocabEntry", "SelectedVocabEntry")
-                        .WithMany()
-                        .HasForeignKey("SelectedVocabEntryId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("Aros.Api.Data.Entities.TestSession", "TestSession")
                         .WithMany("Answers")
                         .HasForeignKey("TestSessionId")
@@ -168,10 +143,8 @@ namespace Aros.Api.Migrations
                     b.HasOne("Aros.Api.Data.Entities.VocabEntry", "VocabEntry")
                         .WithMany("TestAnswers")
                         .HasForeignKey("VocabEntryId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("SelectedVocabEntry");
 
                     b.Navigation("TestSession");
 
