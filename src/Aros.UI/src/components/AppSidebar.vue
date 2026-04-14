@@ -4,20 +4,20 @@
 
   <nav class="sidebar" :class="{ open: isOpen }">
     <div class="sidebar-header">
-      <span class="logo">Aros</span>
+      <RouterLink to="/" class="logo" @click="$emit('close')">Aros</RouterLink>
       <button class="close-btn" @click="$emit('close')">✕</button>
     </div>
 
     <ul class="nav-list">
-      <li v-for="item in navItems" :key="item.to">
+      <li v-for="item in navRoutes" :key="item.path">
         <RouterLink
-          :to="item.to"
+          :to="item.path"
           class="nav-item"
-          :class="{ active: route.path.startsWith(item.to) }"
+          :class="{ active: route.path.startsWith(item.path) }"
           @click="$emit('close')"
         >
-          <span class="nav-icon">{{ item.icon }}</span>
-          <span class="nav-label">{{ item.label }}</span>
+          <span class="nav-icon">{{ item.meta.icon }}</span>
+          <span class="nav-label">{{ item.meta.label }}</span>
         </RouterLink>
       </li>
     </ul>
@@ -25,16 +25,14 @@
 </template>
 
 <script setup>
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 defineProps({ isOpen: Boolean })
 defineEmits(['close'])
 
 const route = useRoute()
-
-const navItems = [
-  { to: '/vocab', icon: '📖', label: 'Vocabulary Trainer' },
-]
+const router = useRouter()
+const navRoutes = router.getRoutes().filter(r => r.meta?.nav)
 </script>
 
 <style scoped>
@@ -93,6 +91,7 @@ const navItems = [
   font-size: 1.2rem;
   font-weight: 700;
   color: #cba6f7;
+  text-decoration: none;
 }
 
 .close-btn {

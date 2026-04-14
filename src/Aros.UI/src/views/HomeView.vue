@@ -1,40 +1,27 @@
 <template>
-  <main class="home">
-    <h1>Aros</h1>
-    <p class="platform">Platform: {{ platform }}</p>
-    <button @click="ping">Ping API</button>
-    <p v-if="response" class="response">{{ response }}</p>
-    <p v-if="error" class="error">{{ error }}</p>
-  </main>
+  <div class="home">
+    <h1 class="title">Aros</h1>
+    <p class="subtitle">Personal application platform</p>
+
+    <div class="app-grid">
+      <RouterLink
+        v-for="item in navRoutes"
+        :key="item.path"
+        :to="item.path"
+        class="app-card"
+      >
+        <span class="app-icon">{{ item.meta.icon }}</span>
+        <span class="app-label">{{ item.meta.label }}</span>
+      </RouterLink>
+    </div>
+  </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { api } from '@/services/api'
+import { RouterLink, useRouter } from 'vue-router'
 
-const platform = ref('unknown')
-const response = ref('')
-const error = ref('')
-
-onMounted(async () => {
-  try {
-    const result = await api.get('/system/ping')
-    platform.value = result.platform
-  } catch {
-    platform.value = 'API not reachable'
-  }
-})
-
-async function ping() {
-  error.value = ''
-  response.value = ''
-  try {
-    const result = await api.get('/system/ping')
-    response.value = JSON.stringify(result, null, 2)
-  } catch (e) {
-    error.value = e.message
-  }
-}
+const router = useRouter()
+const navRoutes = router.getRoutes().filter(r => r.meta?.nav)
 </script>
 
 <style scoped>
@@ -42,34 +29,56 @@ async function ping() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  min-height: 100vh;
+  padding: 3rem 1.5rem;
   gap: 1rem;
-  padding: 2rem;
 }
 
-h1 { font-size: 2rem; }
-.platform { color: #666; }
-
-button {
-  padding: 0.6rem 1.4rem;
-  font-size: 1rem;
-  border: none;
-  border-radius: 6px;
-  background: #0066cc;
-  color: white;
-  cursor: pointer;
+.title {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #1a1a1a;
 }
 
-button:hover { background: #0052a3; }
-
-.response {
-  font-family: monospace;
-  background: #eee;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  white-space: pre;
+.subtitle {
+  color: #6b7280;
+  font-size: 0.95rem;
+  margin-bottom: 1.5rem;
 }
 
-.error { color: #cc0000; }
+.app-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 1rem;
+  width: 100%;
+  max-width: 600px;
+}
+
+.app-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 1.5rem 1rem;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  text-decoration: none;
+  color: #1a1a1a;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+
+.app-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+}
+
+.app-icon {
+  font-size: 2rem;
+}
+
+.app-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-align: center;
+}
 </style>

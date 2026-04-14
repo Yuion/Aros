@@ -1,20 +1,32 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 
-export function useOnlineStatus() {
-  const isOnline = ref(navigator.onLine)
+const PING_URL = '/api/system/ping'
+const PING_INTERVAL_MS = 15_000
 
-  function update() {
-    isOnline.value = navigator.onLine
+export function useOnlineStatus() {
+  const isOnline = ref(false)
+  let intervalId = null
+
+  async function check() {
+    try {
+      const res = await fetch(PING_URL, { method: 'HEAD', cache: 'no-store' })
+      isOnline.value = res.ok
+    } catch {
+      isOnline.value = false
+    }
   }
 
   onMounted(() => {
-    window.addEventListener('online', update)
-    window.addEventListener('offline', update)
+    check()
+    intervalId = setInterval(check, PING_INTERVAL_MS)
+    window.addEventListener('online', check)
+    window.addEventListener('offline', check)
   })
 
   onUnmounted(() => {
-    window.removeEventListener('online', update)
-    window.removeEventListener('offline', update)
+    clearInterval(intervalId)
+    window.removeEventListener('online', check)
+    window.removeEventListener('offline', check)
   })
 
   return { isOnline }

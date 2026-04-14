@@ -1,23 +1,17 @@
+using Aros.Api.Sync;
 using Microsoft.AspNetCore.Mvc;
-using System.Text.Json;
 
 namespace Aros.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class SyncController : ControllerBase
+public class SyncController(IEnumerable<ISyncHandler> handlers, ILogger<SyncController> logger) : ControllerBase
 {
-    private static readonly Dictionary<string, Func<JsonElement, Task>> _handlers = new();
-
-    /// <summary>
-    /// Register a handler for a sync action type.
-    /// Call this from your feature controllers at startup.
-    /// </summary>
-    public static void RegisterHandler(string type, Func<JsonElement, Task> handler)
-        => _handlers[type] = handler;
+    private readonly Dictionary<string, ISyncHandler> _handlers =
+        handlers.ToDictionary(h => h.ActionType);
 
     [HttpPost]
-    public async Task<IActionResult> Sync([FromBody] SyncRequest request)
+    public async Task<IActionResult> Sync([FromBody] SyncRequest request, CancellationToken ct)
     {
         var syncedIds = new List<int>();
 
@@ -27,25 +21,21 @@ public class SyncController : ControllerBase
             {
                 try
                 {
-                    await handler(action.Payload);
+                    await handler.HandleAsync(action.Payload, ct);
                     syncedIds.Add(action.Id);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[sync] Failed to handle '{action.Type}': {ex.Message}");
+                    logger.LogError(ex, "Failed to handle sync action '{Type}'", action.Type);
                 }
             }
             else
             {
-                // Unknown type — still ack it so the client doesn't retry forever
-                Console.WriteLine($"[sync] No handler for action type '{action.Type}'");
-                syncedIds.Add(action.Id);
+                logger.LogWarning("No handler registered for sync action type '{Type}'", action.Type);
+                syncedIds.Add(action.Id); // Ack unknown types — prevents infinite client retry
             }
         }
 
         return Ok(new { syncedIds });
     }
 }
-
-public record SyncRequest(List<SyncAction> Actions);
-public record SyncAction(int Id, string Type, JsonElement Payload, string Timestamp);

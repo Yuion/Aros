@@ -1,10 +1,17 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import HomeView from '@/views/HomeView.vue'
-import VocabView from '@/views/vocab/VocabView.vue'
 
 const routes = [
-  { path: '/', name: 'home', component: HomeView },
-  { path: '/vocab', name: 'vocab', component: VocabView },
+  {
+    path: '/',
+    name: 'home',
+    component: () => import('@/views/HomeView.vue'),
+  },
+  {
+    path: '/vocab',
+    name: 'vocab',
+    component: () => import('@/views/vocab/VocabView.vue'),
+    meta: { nav: true, label: 'Vocabulary Trainer', icon: '📖' },
+  },
 ]
 
 export default createRouter({
