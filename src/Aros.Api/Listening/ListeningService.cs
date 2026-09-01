@@ -83,6 +83,7 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         {
             state.Answered = true;
             RecordScore(clip, correct);
+            db.ListeningAnswers.Add(new ListeningAnswer { TtsClipId = clip.Id, Correct = correct });
             await db.SaveChangesAsync(ct);
         }
 

@@ -25,6 +25,12 @@ const routes = [
     meta: { nav: true, label: 'Chinese Listening', icon: '👂' },
   },
   {
+    path: '/chinese-stats',
+    name: 'chinese-stats',
+    component: () => import('@/views/chinese/StatsView.vue'),
+    meta: { nav: true, label: 'Listening Stats', icon: '📊' },
+  },
+  {
     path: '/chinese-listening/play',
     name: 'chinese-listening-play',
     component: () => import('@/views/chinese/ListeningGameView.vue'),

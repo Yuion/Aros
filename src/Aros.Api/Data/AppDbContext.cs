@@ -12,9 +12,20 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<TtsClip> TtsClips => Set<TtsClip>();
     public DbSet<TtsClipStat> TtsClipStats => Set<TtsClipStat>();
     public DbSet<HomophoneGroup> HomophoneGroups => Set<HomophoneGroup>();
+    public DbSet<ListeningAnswer> ListeningAnswers => Set<ListeningAnswer>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<ListeningAnswer>(entity =>
+        {
+            entity.HasIndex(a => a.AnsweredAt);
+
+            entity.HasOne(a => a.TtsClip)
+                  .WithMany()
+                  .HasForeignKey(a => a.TtsClipId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
         modelBuilder.Entity<HomophoneGroup>(entity =>
         {
             entity.HasIndex(g => g.Characters).IsUnique();
