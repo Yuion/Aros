@@ -9,9 +9,22 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<VocabEntry> VocabEntries => Set<VocabEntry>();
     public DbSet<TestSession> TestSessions => Set<TestSession>();
     public DbSet<TestAnswer> TestAnswers => Set<TestAnswer>();
+    public DbSet<TtsClip> TtsClips => Set<TtsClip>();
+    public DbSet<TtsClipStat> TtsClipStats => Set<TtsClipStat>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<TtsClip>(entity =>
+        {
+            // The cache key — one paid synthesis per distinct sentence
+            entity.HasIndex(c => c.Sentence).IsUnique();
+
+            entity.HasOne(c => c.Stat)
+                  .WithOne(s => s.TtsClip)
+                  .HasForeignKey<TtsClipStat>(s => s.TtsClipId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
         modelBuilder.Entity<TestAnswer>(entity =>
         {
             entity.HasOne(a => a.VocabEntry)

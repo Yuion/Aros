@@ -1,5 +1,7 @@
 using Aros.Api.Data;
+using Aros.Api.Listening;
 using Aros.Api.Sync;
+using Aros.Api.Tts;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,6 +18,18 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
+
+builder.Services.Configure<TtsOptions>(builder.Configuration.GetSection(TtsOptions.SectionName));
+builder.Services.AddMemoryCache();
+
+builder.Services.AddHttpClient<NarakeetClient>(client =>
+{
+    client.BaseAddress = new Uri("https://api.narakeet.com/");
+    client.Timeout = TimeSpan.FromSeconds(60);
+});
+
+builder.Services.AddScoped<TtsService>();
+builder.Services.AddScoped<ListeningService>();
 
 // Auto-register all ISyncHandler implementations in this assembly
 builder.Services.Scan(scan => scan
