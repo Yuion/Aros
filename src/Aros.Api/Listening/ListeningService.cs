@@ -36,11 +36,25 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
             throw new ListeningException(
                 $"Need at least {MinimumClips} sentences to play. Add more in Chinese TTS — you have {clips.Count}.");
 
-        var wanted = Math.Clamp(questionCount, 1, clips.Count);
-        var answers = PickWeighted(clips, wanted);
+        var map = Homophones.BuildMap(await db.HomophoneGroups.AsNoTracking().ToListAsync(ct));
+        var audible = clips.ToDictionary(c => c.Id, c => Homophones.AudibleForm(c.Sentence, map));
+
+        // A clip can only be asked about if at least two other sentences sound different from it —
+        // otherwise the question would come down to a guess between identical-sounding options.
+        var eligible = clips
+            .Where(c => DistinctSoundCount(c, clips, audible) >= 2)
+            .ToList();
+
+        if (eligible.Count == 0)
+            throw new ListeningException(
+                "Every sentence sounds like another one in your library, so no fair question can be built. " +
+                "Add sentences that differ audibly, or loosen a sound-alike group.");
+
+        var wanted = Math.Clamp(questionCount, 1, eligible.Count);
+        var answers = PickWeighted(eligible, wanted);
 
         var questions = answers
-            .Select(answer => BuildQuestion(answer, clips))
+            .Select(answer => BuildQuestion(answer, clips, audible))
             .ToList();
 
         return new Quiz(questions);
@@ -93,9 +107,9 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         stat.LastSeenAt = DateTime.UtcNow;
     }
 
-    private QuizQuestion BuildQuestion(TtsClip answer, List<TtsClip> allClips)
+    private QuizQuestion BuildQuestion(TtsClip answer, List<TtsClip> allClips, Dictionary<int, string> audible)
     {
-        var options = PickDistractors(answer, allClips)
+        var options = PickDistractors(answer, allClips, audible)
             .Append(answer)
             .OrderBy(_ => Random.Shared.Next())
             .Select(c => new QuizOption(c.Id, c.Sentence))
@@ -108,21 +122,54 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     }
 
     /// <summary>
-    /// Two wrong options, drawn from the sentences closest in character length to the answer —
-    /// length alone shouldn't give the game away.
+    /// Two wrong options, ranked by how much they share with the answer — same characters first,
+    /// then same length — so the choice turns on the part that actually differs rather than on an
+    /// obvious mismatch. Sentences that sound identical to the answer are never eligible.
     /// </summary>
-    private static IEnumerable<TtsClip> PickDistractors(TtsClip answer, List<TtsClip> allClips)
+    private static IEnumerable<TtsClip> PickDistractors(
+        TtsClip answer, List<TtsClip> allClips, Dictionary<int, string> audible)
     {
-        const int poolSize = 12;
+        const int poolSize = 8;
 
-        return allClips
-            .Where(c => c.Id != answer.Id)
-            .OrderBy(c => Math.Abs(c.Sentence.Length - answer.Sentence.Length))
+        var ranked = DistinctSounding(answer, allClips, audible)
+            .OrderByDescending(c => SentenceSimilarity.Score(answer.Sentence, c.Sentence))
+            .ThenBy(c => Math.Abs(Length(c.Sentence) - Length(answer.Sentence)))
             .ThenBy(_ => Random.Shared.Next())
+            .ToList();
+
+        // Shuffle the strongest candidates so rounds don't repeat the same trio, but keep the rest
+        // as a tail to fall back on if the pool turns out to be all one sound.
+        var candidates = ranked
             .Take(poolSize)
             .OrderBy(_ => Random.Shared.Next())
-            .Take(2);
+            .Concat(ranked.Skip(poolSize));
+
+        // The two wrong options must also differ from each other by ear — a pair of identical
+        // sounding distractors could both be ruled out without understanding a thing.
+        var chosen = new List<TtsClip>(2);
+        var used = new HashSet<string> { audible[answer.Id] };
+
+        foreach (var candidate in candidates)
+        {
+            if (!used.Add(audible[candidate.Id])) continue;
+
+            chosen.Add(candidate);
+            if (chosen.Count == 2) break;
+        }
+
+        return chosen;
     }
+
+    private static IEnumerable<TtsClip> DistinctSounding(
+        TtsClip answer, List<TtsClip> allClips, Dictionary<int, string> audible) =>
+        allClips.Where(c => c.Id != answer.Id && audible[c.Id] != audible[answer.Id]);
+
+    /// <summary>How many genuinely different sounds are available to build wrong options from.</summary>
+    private static int DistinctSoundCount(
+        TtsClip answer, List<TtsClip> allClips, Dictionary<int, string> audible) =>
+        DistinctSounding(answer, allClips, audible).Select(c => audible[c.Id]).Distinct().Count();
+
+    private static int Length(string sentence) => sentence.EnumerateRunes().Count();
 
     /// <summary>
     /// Weighted draw without replacement. A clip's weight rises with every miss and halves for
