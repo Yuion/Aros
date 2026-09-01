@@ -5,31 +5,42 @@ namespace Aros.Api.Listening;
 public static class SentenceSimilarity
 {
     /// <summary>
-    /// Sørensen–Dice over character multisets: 1.0 for identical character content, 0.0 for none
-    /// shared. Because the denominator is the combined length, it already rewards sentences of a
-    /// similar size — a short sentence can never score highly against a long one.
+    /// Levenshtein distance in characters: how many single-character edits turn one sentence into
+    /// the other. 1 means the pair differs by exactly one character — the hardest possible choice,
+    /// and what distractor selection aims for.
     /// </summary>
-    public static double Score(string a, string b)
+    public static int Distance(string a, string b)
     {
-        var countsA = Counts(a);
-        var countsB = Counts(b);
+        var left = Runes(a);
+        var right = Runes(b);
 
-        var total = countsA.Values.Sum() + countsB.Values.Sum();
-        if (total == 0) return 0;
+        if (left.Length == 0) return right.Length;
+        if (right.Length == 0) return left.Length;
 
-        var shared = countsA
-            .Where(pair => countsB.ContainsKey(pair.Key))
-            .Sum(pair => Math.Min(pair.Value, countsB[pair.Key]));
+        // Two rolling rows rather than the full matrix — sentences are short, but this keeps it flat.
+        var previous = new int[right.Length + 1];
+        var current = new int[right.Length + 1];
 
-        return 2.0 * shared / total;
+        for (var j = 0; j <= right.Length; j++) previous[j] = j;
+
+        for (var i = 1; i <= left.Length; i++)
+        {
+            current[0] = i;
+
+            for (var j = 1; j <= right.Length; j++)
+            {
+                var substitution = previous[j - 1] + (left[i - 1] == right[j - 1] ? 0 : 1);
+                var deletion = previous[j] + 1;
+                var insertion = current[j - 1] + 1;
+
+                current[j] = Math.Min(substitution, Math.Min(deletion, insertion));
+            }
+
+            (previous, current) = (current, previous);
+        }
+
+        return previous[right.Length];
     }
 
-    private static Dictionary<Rune, int> Counts(string text)
-    {
-        var counts = new Dictionary<Rune, int>();
-        foreach (var rune in text.EnumerateRunes())
-            counts[rune] = counts.GetValueOrDefault(rune) + 1;
-
-        return counts;
-    }
+    private static Rune[] Runes(string text) => text.EnumerateRunes().ToArray();
 }

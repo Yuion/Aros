@@ -123,27 +123,18 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     }
 
     /// <summary>
-    /// Two wrong options, ranked by how much they share with the answer — same characters first,
-    /// then same length — so the choice turns on the part that actually differs rather than on an
-    /// obvious mismatch. Sentences that sound identical to the answer are never eligible.
+    /// The two closest wrong options there are, measured in single-character edits. Candidates are
+    /// taken strictly nearest-first, so when a sentence differing by one character exists it is
+    /// always used; the shuffle only breaks ties between equally close candidates, which is the
+    /// only place variety can come from without loosening the choice.
+    /// Sentences that sound identical to the answer are never eligible.
     /// </summary>
     private static IEnumerable<TtsClip> PickDistractors(
         TtsClip answer, List<TtsClip> allClips, Dictionary<int, string> audible)
     {
-        const int poolSize = 8;
-
-        var ranked = DistinctSounding(answer, allClips, audible)
-            .OrderByDescending(c => SentenceSimilarity.Score(answer.Sentence, c.Sentence))
-            .ThenBy(c => Math.Abs(Length(c.Sentence) - Length(answer.Sentence)))
-            .ThenBy(_ => Random.Shared.Next())
-            .ToList();
-
-        // Shuffle the strongest candidates so rounds don't repeat the same trio, but keep the rest
-        // as a tail to fall back on if the pool turns out to be all one sound.
-        var candidates = ranked
-            .Take(poolSize)
-            .OrderBy(_ => Random.Shared.Next())
-            .Concat(ranked.Skip(poolSize));
+        var candidates = DistinctSounding(answer, allClips, audible)
+            .OrderBy(c => SentenceSimilarity.Distance(answer.Sentence, c.Sentence))
+            .ThenBy(_ => Random.Shared.Next());
 
         // The two wrong options must also differ from each other by ear — a pair of identical
         // sounding distractors could both be ruled out without understanding a thing.
@@ -169,8 +160,6 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     private static int DistinctSoundCount(
         TtsClip answer, List<TtsClip> allClips, Dictionary<int, string> audible) =>
         DistinctSounding(answer, allClips, audible).Select(c => audible[c.Id]).Distinct().Count();
-
-    private static int Length(string sentence) => sentence.EnumerateRunes().Count();
 
     /// <summary>
     /// Weighted draw without replacement. A clip's weight rises with every miss and halves for
