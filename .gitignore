@@ -21,6 +21,9 @@ npm-debug.log*
 # Secrets
 appsettings.json
 
+# Personal notes
+todo.md
+
 # OS
 .DS_Store
 Thumbs.db
