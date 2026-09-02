@@ -16,6 +16,13 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
 {
     public const int DefaultQuestionCount = 10;
     private const int MinimumClips = 3;
+
+    /// <summary>Days without hearing a clip that cancel one correct answer from its streak.</summary>
+    private const double StreakDecayDays = 7.0;
+
+    /// <summary>Nothing ever drops out of rotation entirely, however well known.</summary>
+    private const double FloorWeight = 0.25;
+
     private static readonly TimeSpan TokenLifetime = TimeSpan.FromHours(2);
 
     /// <summary>Answer key for one question, held server-side so the page can't read it out of the payload.</summary>
@@ -162,9 +169,9 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         DistinctSounding(answer, allClips, audible).Select(c => audible[c.Id]).Distinct().Count();
 
     /// <summary>
-    /// Weighted draw without replacement. A clip's weight rises with every miss and halves for
-    /// each consecutive correct answer, so weak sentences come back often and mastered ones fade
-    /// out without ever disappearing entirely.
+    /// Weighted draw without replacement. A clip's weight rises with every miss and falls with a
+    /// correct streak — but the streak erodes with time, so nothing stays suppressed just because
+    /// it was known once.
     /// </summary>
     private static List<TtsClip> PickWeighted(List<TtsClip> clips, int count)
     {
@@ -190,13 +197,29 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         return picked;
     }
 
+    /// <summary>
+    /// Rather than adding a separate recency term, time is folded into the streak: every
+    /// <see cref="StreakDecayDays"/> since the clip was last heard cancels one correct answer.
+    /// A sentence answered right three times running is suppressed now, drifts back to half
+    /// weight after two weeks and to full weight after three — so score and recency combine in
+    /// one number instead of competing.
+    /// </summary>
     private static double Weight(TtsClip clip)
     {
         var stat = clip.Stat;
-        if (stat is null) return 1.0;
+        if (stat is null) return 1.0;          // never heard — fully due
 
-        var weight = (1 + stat.WrongCount) * Math.Pow(0.5, stat.ConsecutiveCorrect);
-        return Math.Max(0.25, weight);
+        var weight = (1 + stat.WrongCount) * Math.Pow(0.5, EffectiveStreak(stat));
+        return Math.Max(FloorWeight, weight);
+    }
+
+    private static double EffectiveStreak(TtsClipStat stat)
+    {
+        if (stat.ConsecutiveCorrect == 0) return 0;
+        if (stat.LastSeenAt is null) return 0;    // no date to decay from — treat as due
+
+        var daysSince = Math.Max(0, (DateTime.UtcNow - stat.LastSeenAt.Value).TotalDays);
+        return Math.Max(0, stat.ConsecutiveCorrect - daysSince / StreakDecayDays);
     }
 
     private QuestionState Lookup(Guid token) =>
