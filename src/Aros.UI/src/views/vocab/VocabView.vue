@@ -44,11 +44,9 @@
         </button>
       </form>
 
-      <p v-if="added" class="added" :class="{ flagged: added.needsReview }">
-        <span class="added-chars" lang="zh">{{ added.characters }}</span>
-        <span v-if="added.pinyin">{{ added.pinyin }} — {{ added.english }}</span>
-        <span v-else>no dictionary match</span>
-        <span v-if="added.needsReview" class="added-note">needs review before it can be tested</span>
+      <p v-if="added.length" class="added">
+        Added {{ added.length }} for review:
+        <span v-for="w in added" :key="w.id" class="added-chip" lang="zh">{{ w.characters }}</span>
       </p>
 
       <p v-if="!ready.length" class="placeholder">
@@ -63,9 +61,10 @@
       <section v-if="review.length" class="card">
         <h2>Needs review <span class="count">{{ review.length }}</span></h2>
         <p class="card-note">
-          These had several dictionary readings, or none at all, so the reading could not be
-          inferred from the sentence. They stay out of tests until you confirm them — check the
-          pinyin and meaning, then save.
+          Everything new lands here first. A multi-character word is offered alongside its
+          individual characters, since which of them you actually wanted is your call — delete the
+          ones you do not, check the pinyin and meaning on the rest, then confirm. Nothing is
+          tested until you do.
         </p>
 
         <ul class="review-list">
@@ -142,7 +141,7 @@ const error = ref('')
 const edits = reactive({})
 const newWord = ref('')
 const adding = ref(false)
-const added = ref(null)
+const added = ref([])
 
 const ready = computed(() => words.value.filter((w) => !w.needsReview))
 const review = computed(() => words.value.filter((w) => w.needsReview))
@@ -178,10 +177,11 @@ async function addWord() {
 
   adding.value = true
   error.value = ''
-  added.value = null
+  added.value = []
 
   try {
-    added.value = await api.post('/vocab/words', { characters: newWord.value })
+    const result = await api.post('/vocab/words', { characters: newWord.value })
+    added.value = result.added
     newWord.value = ''
     await load()
   } catch (e) {
@@ -378,30 +378,23 @@ h1 {
 .added {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.4rem;
   flex-wrap: wrap;
   font-size: 0.82rem;
-  color: #4b5563;
+  color: #92400e;
   padding: 0.5rem 0.75rem;
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
   border-radius: 8px;
 }
 
-.added.flagged {
-  background: #fffbeb;
-  border-color: #fde68a;
-}
-
-.added-chars {
-  font-size: 1.2rem;
+.added-chip {
+  font-size: 1.05rem;
   font-weight: 600;
   color: #1a1a1a;
-}
-
-.added-note {
-  font-size: 0.72rem;
-  color: #92400e;
+  background: white;
+  border-radius: 5px;
+  padding: 0.1rem 0.4rem;
 }
 
 .direction-select {

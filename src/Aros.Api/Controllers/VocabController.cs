@@ -50,16 +50,18 @@ public class VocabController(
     {
         try
         {
-            var word = await harvester.AddAsync(request.Characters, ct);
+            var words = await harvester.AddAsync(request.Characters, ct);
 
             return Ok(new
             {
-                id = word.Id,
-                characters = word.Characters,
-                pinyin = word.Pinyin,
-                english = word.English,
-                needsReview = word.NeedsReview,
-                readingAlternatives = word.ReadingAlternatives,
+                added = words.Select(word => new
+                {
+                    id = word.Id,
+                    characters = word.Characters,
+                    pinyin = word.Pinyin,
+                    english = word.English,
+                    needsReview = word.NeedsReview,
+                }),
             });
         }
         catch (VocabException ex)

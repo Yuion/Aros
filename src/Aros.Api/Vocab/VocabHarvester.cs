@@ -25,9 +25,9 @@ public partial class VocabHarvester(AppDbContext db, ILogger<VocabHarvester> log
 
         var added = new List<VocabWord>();
 
-        foreach (var segment in segments.Distinct())
+        foreach (var candidate in segments.SelectMany(WithCharacters).Distinct())
         {
-            if (await BuildAsync(segment, ct) is { } word) added.Add(word);
+            if (await BuildAsync(candidate, ct) is { } word) added.Add(word);
         }
 
         if (added.Count > 0)
@@ -49,7 +49,7 @@ public partial class VocabHarvester(AppDbContext db, ILogger<VocabHarvester> log
     /// dictionary lookup, the pick between readings and the review flag all behave exactly as they
     /// do during a harvest.
     /// </summary>
-    public async Task<VocabWord> AddAsync(string? characters, CancellationToken ct)
+    public async Task<List<VocabWord>> AddAsync(string? characters, CancellationToken ct)
     {
         var cleaned = new string(
             (characters ?? "").EnumerateRunes().Where(IsHan).SelectMany(r => r.ToString()).ToArray());
@@ -57,23 +57,46 @@ public partial class VocabHarvester(AppDbContext db, ILogger<VocabHarvester> log
         if (cleaned.Length == 0)
             throw new VocabException("Enter one or more Chinese characters.");
 
-        var word = await BuildAsync(cleaned, ct);
+        var added = new List<VocabWord>();
 
-        if (word is null)
+        foreach (var candidate in WithCharacters(cleaned))
+        {
+            if (await BuildAsync(candidate, ct) is { } word) added.Add(word);
+        }
+
+        if (added.Count == 0)
         {
             var existing = await db.VocabWords
                 .Where(w => w.Characters == cleaned)
                 .Select(w => w.Pinyin)
                 .FirstOrDefaultAsync(ct);
 
-            throw new VocabException($"{cleaned} is already in your vocabulary ({existing}).");
+            throw new VocabException(existing is null
+                ? $"{cleaned} and its characters are already in your vocabulary."
+                : $"{cleaned} is already in your vocabulary ({existing}).");
         }
 
-        db.VocabWords.Add(word);
+        db.VocabWords.AddRange(added);
         await db.SaveChangesAsync(ct);
-        logger.LogInformation("Added {Characters} by hand", cleaned);
+        logger.LogInformation("Added {Count} entries by hand from {Characters}", added.Count, cleaned);
 
-        return word;
+        return added;
+    }
+
+    /// <summary>
+    /// A word and, when it has more than one character, each of those characters on its own.
+    /// 中国 is worth learning as a word and 中 and 国 are worth learning as characters; which of
+    /// the three were actually wanted is a judgement call, so all of them are offered and the
+    /// review queue is where the unwanted ones get thrown away.
+    /// </summary>
+    private static IEnumerable<string> WithCharacters(string word)
+    {
+        yield return word;
+
+        var runes = word.EnumerateRunes().ToList();
+        if (runes.Count < 2) yield break;
+
+        foreach (var rune in runes) yield return rune.ToString();
     }
 
     /// <summary>
@@ -92,11 +115,6 @@ public partial class VocabHarvester(AppDbContext db, ILogger<VocabHarvester> log
         readings = [.. readings.OrderBy(SensePriority).ThenBy(d => d.Id)];
 
         var chosen = readings.FirstOrDefault();
-
-        // With several readings there is nothing to disambiguate against, so take the best guess
-        // and flag it. Anything flagged stays out of tests until confirmed — see VocabService.
-        var needsReview = readings.Count != 1;
-
         var pinyin = chosen is null ? "" : CedictImporter.ForDisplay(chosen.Pinyin);
         var english = chosen is null ? "" : FirstSenses(chosen.English);
 
@@ -109,7 +127,11 @@ public partial class VocabHarvester(AppDbContext db, ILogger<VocabHarvester> log
             Characters = characters,
             Pinyin = pinyin,
             English = english,
-            NeedsReview = needsReview,
+
+            // Everything new waits for a look. Segmentation guesses at word boundaries and the
+            // dictionary guesses at readings; both are often right and neither is reliable enough
+            // to put a word into rotation unseen.
+            NeedsReview = true,
             ReadingAlternatives = readings.Count > 1
                 ? string.Join(" | ", readings.Skip(1).Take(5).Select(r => $"{r.Pinyin} — {FirstSenses(r.English)}"))
                 : null,
