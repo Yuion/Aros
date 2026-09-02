@@ -27,38 +27,7 @@ public partial class VocabHarvester(AppDbContext db, ILogger<VocabHarvester> log
 
         foreach (var segment in segments.Distinct())
         {
-            var readings = await db.DictionaryEntries
-                .Where(d => d.Simplified == segment)
-                .AsNoTracking()
-                .ToListAsync(ct);
-
-            // Dictionary order is alphabetical by pinyin, not by how common a sense is, so the
-            // first row is a poor default — for 水 it is the surname Shui, not water.
-            readings = [.. readings.OrderBy(SensePriority).ThenBy(d => d.Id)];
-
-            var chosen = readings.FirstOrDefault();
-
-            // The reading cannot be inferred from the sentence, so take the first and flag it.
-            // Anything flagged stays out of tests until confirmed — see VocabService.
-            var needsReview = readings.Count != 1;
-
-            var pinyin = chosen is null ? "" : CedictImporter.ForDisplay(chosen.Pinyin);
-            var english = chosen is null ? "" : FirstSenses(chosen.English);
-
-            var exists = await db.VocabWords
-                .AnyAsync(w => w.Characters == segment && w.Pinyin == pinyin, ct);
-            if (exists) continue;
-
-            added.Add(new VocabWord
-            {
-                Characters = segment,
-                Pinyin = pinyin,
-                English = english,
-                NeedsReview = needsReview,
-                ReadingAlternatives = readings.Count > 1
-                    ? string.Join(" | ", readings.Skip(1).Take(5).Select(r => $"{r.Pinyin} — {FirstSenses(r.English)}"))
-                    : null,
-            });
+            if (await BuildAsync(segment, ct) is { } word) added.Add(word);
         }
 
         if (added.Count > 0)
@@ -72,6 +41,79 @@ public partial class VocabHarvester(AppDbContext db, ILogger<VocabHarvester> log
             added.Count,
             added.Count(w => w.NeedsReview),
             added.Select(w => w.Characters).ToList());
+    }
+
+    /// <summary>
+    /// Adds one word by hand, without needing a sentence to find it in. The characters are taken
+    /// as given — a deliberate 中国人 stays one entry rather than being segmented apart — but the
+    /// dictionary lookup, the pick between readings and the review flag all behave exactly as they
+    /// do during a harvest.
+    /// </summary>
+    public async Task<VocabWord> AddAsync(string? characters, CancellationToken ct)
+    {
+        var cleaned = new string(
+            (characters ?? "").EnumerateRunes().Where(IsHan).SelectMany(r => r.ToString()).ToArray());
+
+        if (cleaned.Length == 0)
+            throw new VocabException("Enter one or more Chinese characters.");
+
+        var word = await BuildAsync(cleaned, ct);
+
+        if (word is null)
+        {
+            var existing = await db.VocabWords
+                .Where(w => w.Characters == cleaned)
+                .Select(w => w.Pinyin)
+                .FirstOrDefaultAsync(ct);
+
+            throw new VocabException($"{cleaned} is already in your vocabulary ({existing}).");
+        }
+
+        db.VocabWords.Add(word);
+        await db.SaveChangesAsync(ct);
+        logger.LogInformation("Added {Characters} by hand", cleaned);
+
+        return word;
+    }
+
+    /// <summary>
+    /// Looks a headword up and shapes the entry. Returns null when it is already held, so both
+    /// callers can treat "nothing new" the same way.
+    /// </summary>
+    private async Task<VocabWord?> BuildAsync(string characters, CancellationToken ct)
+    {
+        var readings = await db.DictionaryEntries
+            .Where(d => d.Simplified == characters)
+            .AsNoTracking()
+            .ToListAsync(ct);
+
+        // Dictionary order is alphabetical by pinyin, not by how common a sense is, so the
+        // first row is a poor default — for 水 it is the surname Shui, not water.
+        readings = [.. readings.OrderBy(SensePriority).ThenBy(d => d.Id)];
+
+        var chosen = readings.FirstOrDefault();
+
+        // With several readings there is nothing to disambiguate against, so take the best guess
+        // and flag it. Anything flagged stays out of tests until confirmed — see VocabService.
+        var needsReview = readings.Count != 1;
+
+        var pinyin = chosen is null ? "" : CedictImporter.ForDisplay(chosen.Pinyin);
+        var english = chosen is null ? "" : FirstSenses(chosen.English);
+
+        var exists = await db.VocabWords
+            .AnyAsync(w => w.Characters == characters && w.Pinyin == pinyin, ct);
+        if (exists) return null;
+
+        return new VocabWord
+        {
+            Characters = characters,
+            Pinyin = pinyin,
+            English = english,
+            NeedsReview = needsReview,
+            ReadingAlternatives = readings.Count > 1
+                ? string.Join(" | ", readings.Skip(1).Take(5).Select(r => $"{r.Pinyin} — {FirstSenses(r.English)}"))
+                : null,
+        };
     }
 
     /// <summary>

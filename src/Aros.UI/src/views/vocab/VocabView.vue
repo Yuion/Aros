@@ -3,7 +3,7 @@
     <header>
       <h1>Vocabulary Trainer</h1>
       <p class="subtitle">
-        Words are collected automatically from the sentences you add in Chinese TTS.
+        Words are collected from the sentences you add in Chinese TTS, or added here by hand.
       </p>
     </header>
 
@@ -30,6 +30,26 @@
           <option v-for="d in DIRECTIONS" :key="d.value" :value="d.value">{{ d.label }}</option>
         </select>
       </div>
+
+      <form class="add-word" @submit.prevent="addWord">
+        <input
+          v-model="newWord"
+          lang="zh"
+          placeholder="水  or  中国"
+          :disabled="adding"
+          class="add-input"
+        />
+        <button type="submit" class="add-btn" :disabled="adding || !newWord.trim()">
+          {{ adding ? 'Adding…' : 'Add word' }}
+        </button>
+      </form>
+
+      <p v-if="added" class="added" :class="{ flagged: added.needsReview }">
+        <span class="added-chars" lang="zh">{{ added.characters }}</span>
+        <span v-if="added.pinyin">{{ added.pinyin }} — {{ added.english }}</span>
+        <span v-else>no dictionary match</span>
+        <span v-if="added.needsReview" class="added-note">needs review before it can be tested</span>
+      </p>
 
       <p v-if="!ready.length" class="placeholder">
         Nothing testable yet.
@@ -120,6 +140,9 @@ const loading = ref(true)
 const importing = ref(false)
 const error = ref('')
 const edits = reactive({})
+const newWord = ref('')
+const adding = ref(false)
+const added = ref(null)
 
 const ready = computed(() => words.value.filter((w) => !w.needsReview))
 const review = computed(() => words.value.filter((w) => w.needsReview))
@@ -148,6 +171,24 @@ function start() {
     path: '/vocab/session',
     query: direction.value ? { direction: direction.value } : {},
   })
+}
+
+async function addWord() {
+  if (adding.value || !newWord.value.trim()) return
+
+  adding.value = true
+  error.value = ''
+  added.value = null
+
+  try {
+    added.value = await api.post('/vocab/words', { characters: newWord.value })
+    newWord.value = ''
+    await load()
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    adding.value = false
+  }
 }
 
 async function save(word) {
@@ -292,6 +333,75 @@ h1 {
 .play-sub {
   font-size: 0.72rem;
   opacity: 0.85;
+}
+
+.add-word {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.add-input {
+  flex: 1;
+  min-width: 0;
+  max-width: 16rem;
+  padding: 0.5rem 0.7rem;
+  font-family: inherit;
+  font-size: 1.1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  color: #1a1a1a;
+}
+
+.add-input:focus {
+  outline: 2px solid #cba6f7;
+  outline-offset: -1px;
+}
+
+.add-btn {
+  padding: 0.5rem 1rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: white;
+  background: #6d5bd0;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.add-btn:disabled {
+  background: #c7c4d6;
+  cursor: not-allowed;
+}
+
+.added {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  color: #4b5563;
+  padding: 0.5rem 0.75rem;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+}
+
+.added.flagged {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.added-chars {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.added-note {
+  font-size: 0.72rem;
+  color: #92400e;
 }
 
 .direction-select {

@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Aros.Api.Controllers;
 
 public record VocabAnswerRequest(Guid Token, string? Text, int? SelectedWordId);
+public record AddWordRequest(string? Characters);
 public record VocabEditRequest(string? Pinyin, string? English, string[]? Tags, string? Notes);
 
 [ApiController]
@@ -41,6 +42,30 @@ public class VocabController(
             .ToListAsync(ct);
 
         return Ok(words);
+    }
+
+    /// <summary>Add a character or word directly, without going through a sentence.</summary>
+    [HttpPost("words")]
+    public async Task<IActionResult> Add([FromBody] AddWordRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var word = await harvester.AddAsync(request.Characters, ct);
+
+            return Ok(new
+            {
+                id = word.Id,
+                characters = word.Characters,
+                pinyin = word.Pinyin,
+                english = word.English,
+                needsReview = word.NeedsReview,
+                readingAlternatives = word.ReadingAlternatives,
+            });
+        }
+        catch (VocabException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     /// <summary>Fix a harvested entry and clear its review flag so it enters the rotation.</summary>
