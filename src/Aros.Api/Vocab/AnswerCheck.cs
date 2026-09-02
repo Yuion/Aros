@@ -30,6 +30,9 @@ public static partial class AnswerCheck
     [GeneratedRegex(@"[1-5]")]
     private static partial Regex ToneDigits();
 
+    [GeneratedRegex(@"\([^)]*\)")]
+    private static partial Regex Parenthetical();
+
     public static bool PinyinMatches(string expected, string given) =>
         NormalizePinyin(expected) == NormalizePinyin(given) && NormalizePinyin(given).Length > 0;
 
@@ -47,15 +50,40 @@ public static partial class AnswerCheck
         return ToneDigits().Replace(want, "") == ToneDigits().Replace(got, "");
     }
 
-    /// <summary>Any one of the slash-separated senses counts.</summary>
+    /// <summary>Any single meaning the entry lists counts as the answer.</summary>
     public static bool EnglishMatches(string expectedField, string given)
     {
         var got = NormalizeEnglish(given);
         if (got.Length == 0) return false;
 
-        return expectedField
-            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Any(sense => NormalizeEnglish(sense) == got);
+        return Alternatives(expectedField).Contains(got);
+    }
+
+    /// <summary>
+    /// Every form of the entry a person could reasonably type. CC-CEDICT separates senses with
+    /// `/` and synonyms within a sense with `;`, so "big; large; great / older (than another
+    /// person)" offers four answers, not two — demanding the whole run "big large great" would
+    /// be testing transcription rather than knowledge.
+    /// A parenthesised aside is also optional: "older" answers "older (than another person)".
+    /// </summary>
+    private static HashSet<string> Alternatives(string expectedField)
+    {
+        var forms = new HashSet<string>();
+
+        foreach (var sense in expectedField.Split(
+                     ['/', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            Add(forms, sense);
+            Add(forms, Parenthetical().Replace(sense, " "));   // the same sense minus its aside
+        }
+
+        return forms;
+    }
+
+    private static void Add(HashSet<string> forms, string candidate)
+    {
+        var normalized = NormalizeEnglish(candidate);
+        if (normalized.Length > 0) forms.Add(normalized);
     }
 
     /// <summary>Lowercase, ü as v, and all spacing dropped so `ni3 hao3` and `ni3hao3` agree.</summary>
