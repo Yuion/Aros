@@ -30,11 +30,26 @@ const routes = [
     meta: { nav: true, label: 'Chinese Listening', icon: '👂' },
   },
   {
-    path: '/chinese-stats',
-    name: 'chinese-stats',
-    component: () => import('@/views/chinese/StatsView.vue'),
-    meta: { nav: true, label: 'Listening Stats', icon: '📊' },
+    // A shell with one tab per kind of test — a new area is a new child route
+    path: '/stats',
+    component: () => import('@/views/stats/StatsLayout.vue'),
+    meta: { nav: true, label: 'Stats', icon: '📊' },
+    children: [
+      { path: '', redirect: '/stats/listening' },
+      {
+        path: 'listening',
+        name: 'stats-listening',
+        component: () => import('@/views/stats/ListeningStatsView.vue'),
+      },
+      {
+        path: 'vocab',
+        name: 'stats-vocab',
+        component: () => import('@/views/stats/VocabStatsView.vue'),
+      },
+    ],
   },
+  // Old bookmark from when stats were listening-only
+  { path: '/chinese-stats', redirect: '/stats/listening' },
   {
     path: '/chinese-listening/play',
     name: 'chinese-listening-play',

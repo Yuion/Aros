@@ -1,0 +1,92 @@
+/* Shared chrome for a stats area, so every tab looks like the same page. */
+
+.area {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.error {
+  padding: 0.7rem 0.9rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #b91c1c;
+  font-size: 0.85rem;
+}
+
+.placeholder {
+  color: #898781;
+  font-size: 0.88rem;
+  padding: 1.25rem 0;
+}
+
+.placeholder.small {
+  padding: 0.5rem 0 0.25rem;
+  font-size: 0.82rem;
+}
+
+.placeholder a {
+  color: #6d5bd0;
+  margin-left: 0.3rem;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .tiles {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.card {
+  padding: 1.1rem 1.2rem;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.card h2 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.count {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #52514e;
+  background: #f0efec;
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+}
+
+.card-note {
+  font-size: 0.76rem;
+  color: #52514e;
+  line-height: 1.5;
+  margin: 0.3rem 0 0.9rem;
+}
+
+/* Chips, so a sentence never wraps across lines mid-phrase */
+.chips {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.chips li {
+  font-size: 0.95rem;
+  color: #52514e;
+  background: #f0efec;
+  border-radius: 6px;
+  padding: 0.25rem 0.55rem;
+  white-space: nowrap;
+}
