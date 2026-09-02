@@ -1,5 +1,6 @@
 using Aros.Api.Data;
 using Aros.Api.Data.Entities;
+using Aros.Api.Scheduling;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 
@@ -16,12 +17,6 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
 {
     public const int DefaultQuestionCount = 10;
     private const int MinimumClips = 3;
-
-    /// <summary>Days without hearing a clip that cancel one correct answer from its streak.</summary>
-    private const double StreakDecayDays = 7.0;
-
-    /// <summary>Nothing ever drops out of rotation entirely, however well known.</summary>
-    private const double FloorWeight = 0.25;
 
     private static readonly TimeSpan TokenLifetime = TimeSpan.FromHours(2);
 
@@ -168,59 +163,13 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         TtsClip answer, List<TtsClip> allClips, Dictionary<int, string> audible) =>
         DistinctSounding(answer, allClips, audible).Select(c => audible[c.Id]).Distinct().Count();
 
-    /// <summary>
-    /// Weighted draw without replacement. A clip's weight rises with every miss and falls with a
-    /// correct streak — but the streak erodes with time, so nothing stays suppressed just because
-    /// it was known once.
-    /// </summary>
-    private static List<TtsClip> PickWeighted(List<TtsClip> clips, int count)
-    {
-        var remaining = new List<TtsClip>(clips);
-        var picked = new List<TtsClip>(count);
+    private static List<TtsClip> PickWeighted(List<TtsClip> clips, int count) =>
+        DrawWeight.PickWithoutReplacement(clips, count, Weight);
 
-        while (picked.Count < count && remaining.Count > 0)
-        {
-            var weights = remaining.Select(Weight).ToList();
-            var roll = Random.Shared.NextDouble() * weights.Sum();
-
-            var index = 0;
-            for (; index < weights.Count - 1; index++)
-            {
-                roll -= weights[index];
-                if (roll <= 0) break;
-            }
-
-            picked.Add(remaining[index]);
-            remaining.RemoveAt(index);
-        }
-
-        return picked;
-    }
-
-    /// <summary>
-    /// Rather than adding a separate recency term, time is folded into the streak: every
-    /// <see cref="StreakDecayDays"/> since the clip was last heard cancels one correct answer.
-    /// A sentence answered right three times running is suppressed now, drifts back to half
-    /// weight after two weeks and to full weight after three — so score and recency combine in
-    /// one number instead of competing.
-    /// </summary>
-    private static double Weight(TtsClip clip)
-    {
-        var stat = clip.Stat;
-        if (stat is null) return 1.0;          // never heard — fully due
-
-        var weight = (1 + stat.WrongCount) * Math.Pow(0.5, EffectiveStreak(stat));
-        return Math.Max(FloorWeight, weight);
-    }
-
-    private static double EffectiveStreak(TtsClipStat stat)
-    {
-        if (stat.ConsecutiveCorrect == 0) return 0;
-        if (stat.LastSeenAt is null) return 0;    // no date to decay from — treat as due
-
-        var daysSince = Math.Max(0, (DateTime.UtcNow - stat.LastSeenAt.Value).TotalDays);
-        return Math.Max(0, stat.ConsecutiveCorrect - daysSince / StreakDecayDays);
-    }
+    private static double Weight(TtsClip clip) =>
+        clip.Stat is { } stat
+            ? DrawWeight.For(stat.WrongCount, stat.ConsecutiveCorrect, stat.LastSeenAt)
+            : DrawWeight.Unseen;
 
     private QuestionState Lookup(Guid token) =>
         cache.TryGetValue(CacheKey(token), out QuestionState? state) && state is not null

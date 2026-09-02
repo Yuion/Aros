@@ -1,5 +1,6 @@
 using Aros.Api.Data;
 using Aros.Api.Tts;
+using Aros.Api.Vocab;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,7 +10,7 @@ public record SpeakRequest(string? Text);
 
 [ApiController]
 [Route("api/[controller]")]
-public class TtsController(AppDbContext db, TtsService tts) : ControllerBase
+public class TtsController(AppDbContext db, TtsService tts, VocabHarvester harvester) : ControllerBase
 {
     /// <summary>Play a sentence — reuses the cached audio when we already own it, otherwise buys one synthesis.</summary>
     [HttpPost("speak")]
@@ -19,6 +20,9 @@ public class TtsController(AppDbContext db, TtsService tts) : ControllerBase
         {
             var (clip, cached) = await tts.GetOrCreateAsync(request.Text, ct);
 
+            // Every sentence entered here grows the vocabulary pool
+            var harvest = await harvester.HarvestAsync(clip.Sentence, ct);
+
             return Ok(new
             {
                 id = clip.Id,
@@ -27,6 +31,8 @@ public class TtsController(AppDbContext db, TtsService tts) : ControllerBase
                 durationSeconds = clip.DurationSeconds,
                 cached,
                 audioUrl = $"/api/tts/clips/{clip.Id}/audio",
+                newWords = harvest.Words,
+                newWordsNeedingReview = harvest.NeedsReview,
             });
         }
         catch (TtsException ex)

@@ -13,6 +13,11 @@ const routes = [
     meta: { nav: true, label: 'Vocabulary Trainer', icon: '📖' },
   },
   {
+    path: '/vocab/session',
+    name: 'vocab-session',
+    component: () => import('@/views/vocab/VocabSessionView.vue'),
+  },
+  {
     path: '/chinese-tts',
     name: 'chinese-tts',
     component: () => import('@/views/chinese/ChineseTtsView.vue'),

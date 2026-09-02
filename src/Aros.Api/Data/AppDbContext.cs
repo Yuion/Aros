@@ -9,9 +9,44 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<TtsClipStat> TtsClipStats => Set<TtsClipStat>();
     public DbSet<HomophoneGroup> HomophoneGroups => Set<HomophoneGroup>();
     public DbSet<ListeningAnswer> ListeningAnswers => Set<ListeningAnswer>();
+    public DbSet<VocabWord> VocabWords => Set<VocabWord>();
+    public DbSet<VocabProgress> VocabProgress => Set<VocabProgress>();
+    public DbSet<VocabAnswer> VocabAnswers => Set<VocabAnswer>();
+    public DbSet<DictionaryEntry> DictionaryEntries => Set<DictionaryEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<VocabWord>(entity =>
+        {
+            // 多音字 stay separate: 行/xing2 and 行/hang2 are two words with two scores
+            entity.HasIndex(w => new { w.Characters, w.Pinyin }).IsUnique();
+            entity.HasIndex(w => w.Characters);
+        });
+
+        modelBuilder.Entity<VocabProgress>(entity =>
+        {
+            entity.HasIndex(p => new { p.VocabWordId, p.Direction }).IsUnique();
+
+            entity.HasOne(p => p.VocabWord)
+                  .WithMany(w => w.Progress)
+                  .HasForeignKey(p => p.VocabWordId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<VocabAnswer>(entity =>
+        {
+            entity.HasIndex(a => a.AnsweredAt);
+
+            entity.HasOne(a => a.VocabWord)
+                  .WithMany()
+                  .HasForeignKey(a => a.VocabWordId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // The dictionary is looked up by exact headword during segmentation, so the index
+        // carries the whole load — 125k rows would otherwise mean a scan per candidate.
+        modelBuilder.Entity<DictionaryEntry>(entity => entity.HasIndex(d => d.Simplified));
+
         modelBuilder.Entity<ListeningAnswer>(entity =>
         {
             entity.HasIndex(a => a.AnsweredAt);

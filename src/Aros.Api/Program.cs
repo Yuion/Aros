@@ -2,6 +2,7 @@ using Aros.Api.Data;
 using Aros.Api.Listening;
 using Aros.Api.Sync;
 using Aros.Api.Tts;
+using Aros.Api.Vocab;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -30,6 +31,10 @@ builder.Services.AddHttpClient<NarakeetClient>(client =>
 
 builder.Services.AddScoped<TtsService>();
 builder.Services.AddScoped<ListeningService>();
+builder.Services.AddScoped<VocabService>();
+builder.Services.AddScoped<VocabHarvester>();
+builder.Services.AddScoped<CedictImporter>();
+builder.Services.AddHttpClient(nameof(CedictImporter), client => client.Timeout = TimeSpan.FromMinutes(5));
 
 // Auto-register all ISyncHandler implementations in this assembly
 builder.Services.Scan(scan => scan
