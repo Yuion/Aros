@@ -104,14 +104,14 @@ public class VocabController(
 
     [HttpPost("session")]
     public async Task<IActionResult> Session(
-        [FromQuery] int questions = VocabService.DefaultQuestionCount,
+        [FromQuery] int perDirection = VocabService.DefaultPerDirection,
         [FromQuery] VocabDirection? direction = null,
         [FromQuery] string? tag = null,
         CancellationToken ct = default)
     {
         try
         {
-            var session = await vocab.BuildSessionAsync(questions, direction, tag, ct);
+            var session = await vocab.BuildSessionAsync(perDirection, direction, tag, ct);
 
             return Ok(new
             {

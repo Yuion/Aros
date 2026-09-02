@@ -26,7 +26,12 @@ public class VocabException(string message) : Exception(message);
 
 public class VocabService(AppDbContext db, IMemoryCache cache)
 {
-    public const int DefaultQuestionCount = 10;
+    /// <summary>Questions per direction in a full round — six directions, so eighteen questions.</summary>
+    public const int DefaultPerDirection = 3;
+
+    /// <summary>Length of a round when one direction is being drilled on its own.</summary>
+    private const int SingleDirectionCount = 10;
+
     private const int OptionCount = 3;
     private static readonly TimeSpan TokenLifetime = TimeSpan.FromHours(2);
 
@@ -41,8 +46,14 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
         public bool Answered { get; set; }
     }
 
+    /// <summary>
+    /// A round is a block of questions per direction, the blocks in random order — so every
+    /// direction gets equal practice and you settle into one kind of question at a time instead of
+    /// being thrown between six. Picking a single direction turns the round into a drill of just
+    /// that one, which is the only reason to filter.
+    /// </summary>
     public async Task<VocabSession> BuildSessionAsync(
-        int questionCount, VocabDirection? only, string? tag, CancellationToken ct)
+        int perDirection, VocabDirection? only, string? tag, CancellationToken ct)
     {
         var words = await db.VocabWords
             .Include(w => w.Progress)
@@ -55,37 +66,40 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
 
         var unique = PromptCounts(words);
 
-        var testable = words
-            .Select(word => new
-            {
-                Word = word,
-                Directions = Directions(word, unique).Where(d => only is null || d == only).ToList(),
-            })
-            .Where(x => x.Directions.Count > 0)
-            .ToList();
+        // Which words can be asked in which direction
+        var candidates = Enum.GetValues<VocabDirection>()
+            .Where(direction => only is null || direction == only)
+            .ToDictionary(
+                direction => direction,
+                direction => words.Where(w => Directions(w, unique).Contains(direction)).ToList());
 
-        if (testable.Count == 0)
+        if (candidates.Values.All(list => list.Count == 0))
             throw new VocabException(
                 words.Count == 0
-                    ? "No vocabulary yet. Add sentences in Chinese TTS and the words will be collected from them."
-                    : "No words are testable in that direction yet — they may still need review.");
+                    ? "No vocabulary yet. Add sentences in Chinese TTS, or add a word directly — either way it waits in review first."
+                    : "No words are testable in that direction yet — they may still be waiting for review.");
 
-        // One question per word, so a ten-question round covers ten words
-        var wanted = Math.Clamp(questionCount, 1, testable.Count);
-        var chosen = DrawWeight.PickWithoutReplacement(
-            testable, wanted, x => x.Directions.Max(d => Weight(x.Word, d)));
+        var perBlock = only is null
+            ? Math.Max(1, perDirection)
+            : SingleDirectionCount;          // filtering means drilling that one direction
 
-        var questions = new List<VocabQuestion>(chosen.Count);
+        var blocks = new List<List<VocabQuestion>>();
 
-        foreach (var pick in chosen)
+        foreach (var (direction, pool) in candidates)
         {
-            // Within the word, favour the direction it is weakest in
-            var direction = DrawWeight
-                .PickWithoutReplacement(pick.Directions, 1, d => Weight(pick.Word, d))
-                .Single();
+            if (pool.Count == 0) continue;
 
-            questions.Add(BuildQuestion(pick.Word, direction, words));
+            var picked = DrawWeight.PickWithoutReplacement(
+                pool, Math.Min(perBlock, pool.Count), word => Weight(word, direction));
+
+            blocks.Add(picked.Select(word => BuildQuestion(word, direction, words)).ToList());
         }
+
+        // Which direction opens and which closes is left to chance
+        var questions = blocks
+            .OrderBy(_ => Random.Shared.Next())
+            .SelectMany(block => block)
+            .ToList();
 
         return new VocabSession(questions);
     }
