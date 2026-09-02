@@ -22,8 +22,7 @@ npm-debug.log*
 appsettings.json
 
 # Personal notes
-todo.md
-pi_todo.md
+Documentation/
 
 # OS
 .DS_Store
