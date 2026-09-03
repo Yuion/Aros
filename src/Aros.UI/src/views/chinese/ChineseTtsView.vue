@@ -35,14 +35,14 @@
 
     <!-- Bulk paste: the same thing the box above does, in volume -->
     <section class="import">
-      <button class="disclosure" @click="showImport = !showImport">
-        {{ showImport ? '▾' : '▸' }} Paste a batch
-      </button>
+      <h2>Paste a batch</h2>
 
-      <div v-if="showImport" class="panel">
+      <div class="panel">
         <p class="panel-note">
-          Paste the table straight in — Chinese, pinyin, English. Sentences already in the library
-          are left alone, except that a missing pinyin or translation gets filled in.
+          Paste the whole table — Chinese, pinyin, English — straight from the chat. Surrounding
+          text is ignored. Sentences already in the library are left alone, except that a missing
+          pinyin or translation gets filled in. <strong>Check</strong> first: it tells you how many
+          sentences are new, and each of those costs one synthesis.
         </p>
 
         <textarea
@@ -119,7 +119,6 @@ import { api } from '@/services/api'
 const text = ref('')
 const clips = ref([])
 
-const showImport = ref(false)
 const dump = ref('')
 const preview = ref(null)
 const importResult = ref(null)
@@ -278,6 +277,11 @@ textarea:focus {
 
 .import {
   margin-top: 1.5rem;
+}
+
+.import h2 {
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
 }
 
 .disclosure {
