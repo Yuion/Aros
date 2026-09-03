@@ -20,7 +20,7 @@ public record VocabQuestion(
 
 public record VocabSession(IReadOnlyList<VocabQuestion> Questions);
 
-public record VocabAnswerResult(bool Correct, string Expected, string Characters, string? Note);
+public record VocabAnswerResult(bool Correct, string Expected, string Characters, string? Note, bool Retry = false);
 
 public class VocabException(string message) : Exception(message);
 
@@ -44,6 +44,7 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
         public required int WordId { get; init; }
         public required VocabDirection Direction { get; init; }
         public bool Answered { get; set; }
+        public bool Retried { get; set; }
     }
 
     /// <summary>
@@ -123,6 +124,16 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
         var expected = Answer(word, state.Direction);
         var (correct, note) = Judge(word, state.Direction, expected, text, selectedWordId);
 
+        // Answering the question the round asked a moment ago rather than the one on screen is a
+        // slip of attention, not a gap in knowledge. It gets one free retry, and nothing about
+        // the real answer is given away with it.
+        if (!correct && !state.Answered && !state.Retried
+            && WrongDirection(word, state.Direction, text) is { } gave)
+        {
+            state.Retried = true;
+            return new VocabAnswerResult(false, "", "", $"Wrong direction — that's the {gave}.", Retry: true);
+        }
+
         if (!state.Answered)
         {
             state.Answered = true;
@@ -158,6 +169,30 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
 
             _ => (AnswerCheck.EnglishMatches(expected, given), null),
         };
+    }
+
+    /// <summary>
+    /// Names the form the answer actually belongs to when it is right about this word but in the
+    /// wrong one — 是 answered as "shi4" when the round asked for the English. Only forms other
+    /// than the one being asked for count, and only for typed questions: a wrong multiple-choice
+    /// tap is a wrong answer, not a misread prompt.
+    /// </summary>
+    private static string? WrongDirection(VocabWord word, VocabDirection direction, string? text)
+    {
+        if (!IsTyped(direction) || text is not { Length: > 0 }) return null;
+
+        var asked = AnswerForm(direction);
+
+        if (asked != "pinyin" && word.Pinyin.Length > 0 && AnswerCheck.PinyinMatches(word.Pinyin, text))
+            return "pinyin";
+
+        if (asked != "english" && word.English.Length > 0 && AnswerCheck.EnglishMatches(word.English, text))
+            return "English";
+
+        if (asked != "characters" && text.Trim() == word.Characters)
+            return "characters";
+
+        return null;
     }
 
     private VocabQuestion BuildQuestion(VocabWord word, VocabDirection direction, List<VocabWord> pool)

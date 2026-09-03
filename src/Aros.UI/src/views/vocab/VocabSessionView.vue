@@ -59,6 +59,9 @@
         </li>
       </ul>
 
+      <!-- Right word, wrong form — one free retry, and nothing given away -->
+      <p v-if="retry" class="retry">{{ retry }} Try again.</p>
+
       <!-- Feedback -->
       <div v-if="answer" class="feedback">
         <p :class="answer.correct ? 'right' : 'wrong'">
@@ -86,6 +89,7 @@ const route = useRoute()
 const questions = ref([])
 const index = ref(0)
 const answer = ref(null)
+const retry = ref('')
 const text = ref('')
 const correctCount = ref(0)
 const finished = ref(false)
@@ -100,6 +104,7 @@ async function load() {
   error.value = ''
   finished.value = false
   answer.value = null
+  retry.value = ''
   text.value = ''
   index.value = 0
   correctCount.value = 0
@@ -138,6 +143,16 @@ async function submitChoice(option) {
 async function send(payload) {
   try {
     const result = await api.post('/vocab/answer', { token: current.value.token, ...payload })
+
+    // A misread prompt is not a miss: the question stays open and nothing is scored
+    if (result.retry) {
+      retry.value = result.note
+      text.value = ''
+      await focusField()
+      return
+    }
+
+    retry.value = ''
     answer.value = { ...result, selectedWordId: payload.selectedWordId }
     if (result.correct) correctCount.value++
   } catch (e) {
@@ -154,6 +169,7 @@ function optionClass(option) {
 
 async function next() {
   answer.value = null
+  retry.value = ''
   text.value = ''
 
   if (index.value + 1 >= questions.value.length) {
@@ -317,6 +333,17 @@ onMounted(load)
 .feedback .wrong {
   color: #b91c1c;
   font-weight: 600;
+}
+
+.retry {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  padding: 0.45rem 0.7rem;
+  text-align: center;
 }
 
 .note {

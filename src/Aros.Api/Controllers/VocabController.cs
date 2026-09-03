@@ -146,6 +146,7 @@ public class VocabController(
                 expected = result.Expected,
                 characters = result.Characters,
                 note = result.Note,
+                retry = result.Retry,
             });
         }
         catch (VocabException ex)
