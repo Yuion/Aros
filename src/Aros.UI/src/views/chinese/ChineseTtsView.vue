@@ -7,37 +7,46 @@
       </p>
     </header>
 
-    <form class="composer" @submit.prevent="speak">
-      <textarea
-        v-model="text"
-        rows="3"
-        placeholder="输入中文…"
-        lang="zh"
-        :disabled="loading"
-        @keydown.ctrl.enter="speak"
-      />
-      <div class="composer-row">
-        <button type="submit" class="primary" :disabled="loading || !text.trim()">
-          {{ loading ? 'Synthesizing…' : 'Speak' }}
-        </button>
-        <span class="hint">Ctrl+Enter</span>
-      </div>
-    </form>
-
     <p v-if="error" class="error">{{ error }}</p>
 
-    <p v-if="lastResult" class="result" :class="{ fresh: !lastResult.cached }">
-      <span class="badge">{{ lastResult.cached ? 'Cached — no API call' : 'New — synthesized' }}</span>
-      <span class="result-sentence" lang="zh">{{ lastResult.sentence }}</span>
-    </p>
+    <!-- One sentence at a time -->
+    <section class="area">
+      <button class="area-head" @click="toggle('single')">
+        <span class="caret">{{ open.single ? '▾' : '▸' }}</span> Speak a sentence
+      </button>
 
-    <audio ref="player" controls class="player" />
+      <div v-if="open.single" class="area-body">
+        <form class="composer" @submit.prevent="speak">
+          <textarea
+            v-model="text"
+            rows="3"
+            placeholder="输入中文…"
+            lang="zh"
+            :disabled="loading"
+            @keydown.ctrl.enter="speak"
+          />
+          <div class="composer-row">
+            <button type="submit" class="primary" :disabled="loading || !text.trim()">
+              {{ loading ? 'Synthesizing…' : 'Speak' }}
+            </button>
+            <span class="hint">Ctrl+Enter</span>
+          </div>
+        </form>
 
-    <!-- Bulk paste: the same thing the box above does, in volume -->
-    <section class="import">
-      <h2>Paste a batch</h2>
+        <p v-if="lastResult" class="result" :class="{ fresh: !lastResult.cached }">
+          <span class="badge">{{ lastResult.cached ? 'Cached — no API call' : 'New — synthesized' }}</span>
+          <span class="result-sentence" lang="zh">{{ lastResult.sentence }}</span>
+        </p>
+      </div>
+    </section>
 
-      <div class="panel">
+    <!-- The same thing in volume -->
+    <section class="area">
+      <button class="area-head" @click="toggle('batch')">
+        <span class="caret">{{ open.batch ? '▾' : '▸' }}</span> Paste a batch
+      </button>
+
+      <div v-if="open.batch" class="area-body">
         <p class="panel-note">
           Paste the whole table — Chinese, pinyin, English — straight from the chat. Surrounding
           text is ignored. Sentences already in the library are left alone, except that a missing
@@ -93,6 +102,10 @@
       </div>
     </section>
 
+    <!-- Outside both areas: the library's play buttons use it too, and collapsing a
+         section must not quietly stop them working -->
+    <audio ref="player" controls class="player" />
+
     <section class="library">
       <h2>Library <span class="count">{{ clips.length }}</span></h2>
 
@@ -116,8 +129,32 @@
 import { onMounted, ref } from 'vue'
 import { api } from '@/services/api'
 
+const STORAGE_KEY = 'aros.tts.sections'
+
 const text = ref('')
 const clips = ref([])
+
+// Which sections are unfolded, remembered per browser. Both start open — a collapsed
+// section is easy to miss entirely if you have never seen it open.
+const open = ref(restore())
+
+function restore() {
+  try {
+    return { single: true, batch: true, ...JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') }
+  } catch {
+    return { single: true, batch: true }
+  }
+}
+
+function toggle(section) {
+  open.value[section] = !open.value[section]
+
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(open.value))
+  } catch {
+    // Private windows and blocked site data: the toggle still works, it just won't be remembered
+  }
+}
 
 const dump = ref('')
 const preview = ref(null)
@@ -275,35 +312,32 @@ textarea:focus {
   color: #9ca3af;
 }
 
-.import {
-  margin-top: 1.5rem;
-}
-
-.import h2 {
-  font-size: 1rem;
-  margin-bottom: 0.5rem;
-}
-
-.disclosure {
+.area-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
   font-family: inherit;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   font-weight: 600;
-  color: #6b7280;
+  color: #374151;
   background: none;
   border: none;
   padding: 0;
   cursor: pointer;
+  text-align: left;
 }
 
-.panel {
+.caret {
+  color: #9ca3af;
+  font-size: 0.8rem;
+}
+
+.area-body {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-  margin-top: 0.6rem;
-  padding: 0.9rem;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
+  margin-top: 0.7rem;
 }
 
 .panel-note {
