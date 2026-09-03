@@ -66,18 +66,24 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
 
         var unique = PromptCounts(words);
 
-        // Which words can be asked in which direction
-        var candidates = Enum.GetValues<VocabDirection>()
+        // Which words can be asked in which direction. Rests and mastery are judged per
+        // (word, direction), so mastering 水 → "water" leaves "water" → 水 in full rotation:
+        // they are separate skills and separately scored, and one says nothing about the other.
+        var testable = Enum.GetValues<VocabDirection>()
             .Where(direction => only is null || direction == only)
             .ToDictionary(
                 direction => direction,
                 direction => words.Where(w => Directions(w, unique).Contains(direction)).ToList());
 
+        var candidates = testable.ToDictionary(pair => pair.Key, pair => Askable(pair.Value, pair.Key));
+
         if (candidates.Values.All(list => list.Count == 0))
             throw new VocabException(
                 words.Count == 0
                     ? "No vocabulary yet. Add sentences in Chinese TTS, or add a word directly — either way it waits in review first."
-                    : "No words are testable in that direction yet — they may still be waiting for review.");
+                    : testable.Values.Any(list => list.Count > 0)
+                        ? "Everything testable there is mastered. Add more vocabulary."
+                        : "No words are testable in that direction yet — they may still be waiting for review.");
 
         var perBlock = only is null
             ? Math.Max(1, perDirection)
@@ -277,7 +283,7 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
 
     private static void RecordScore(VocabWord word, VocabDirection direction, bool correct)
     {
-        var progress = word.Progress.FirstOrDefault(p => p.Direction == direction);
+        var progress = Progress(word, direction);
 
         if (progress is null)
         {
@@ -299,8 +305,24 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
         progress.LastSeenAt = DateTime.UtcNow;
     }
 
+    /// <summary>
+    /// Drops words mastered in this direction for good, and resting ones until their rest is up.
+    /// If a direction has nothing but resting words left, the rests are ignored rather than
+    /// dropping the direction from the round — practising early beats not practising.
+    /// </summary>
+    private static List<VocabWord> Askable(List<VocabWord> words, VocabDirection direction)
+    {
+        var live = words.Where(w => Progress(w, direction) is not { } p || !DrawWeight.IsMastered(p.ConsecutiveCorrect)).ToList();
+        var ready = live.Where(w => Progress(w, direction) is not { } p || !DrawWeight.IsResting(p.ConsecutiveCorrect, p.LastSeenAt)).ToList();
+
+        return ready.Count > 0 ? ready : live;
+    }
+
+    private static VocabProgress? Progress(VocabWord word, VocabDirection direction) =>
+        word.Progress.FirstOrDefault(p => p.Direction == direction);
+
     private static double Weight(VocabWord word, VocabDirection direction) =>
-        word.Progress.FirstOrDefault(p => p.Direction == direction) is { } progress
+        Progress(word, direction) is { } progress
             ? DrawWeight.For(progress.WrongCount, progress.ConsecutiveCorrect, progress.LastSeenAt)
             : DrawWeight.Unseen;
 

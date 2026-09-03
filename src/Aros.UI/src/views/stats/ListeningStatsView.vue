@@ -7,7 +7,8 @@
       <section class="tiles">
         <StatTile label="Accuracy" :value="percent(data.totals.accuracy)"
                   :note="`${data.totals.correct} of ${data.totals.answers} answers`" />
-        <StatTile label="Mastered" :value="data.totals.mastered" note="3+ correct in a row" />
+        <StatTile label="Mastered" :value="data.totals.mastered"
+                  :note="`retired · ${data.totals.resting} resting`" />
         <StatTile label="Practiced" :value="data.totals.practiced" :of="data.totals.librarySize"
                   :note="`${data.totals.neverPracticed} never heard`" />
         <StatTile label="Last played" :value="lastPlayed" small
@@ -48,7 +49,11 @@
 
         <section class="card">
           <h2>Mastery</h2>
-          <p class="card-note">Sentences by how many times in a row you've got them right.</p>
+          <p class="card-note">
+            Sentences by how many times in a row you've got them right. Five in a row sends a
+            sentence to rest for a week, then two weeks, then four; the next correct answer
+            masters it and it leaves the pool.
+          </p>
           <RankedBars :rows="masteryRows" scale-to-max />
         </section>
 
@@ -72,7 +77,7 @@ import AccuracyChart from '@/components/stats/AccuracyChart.vue'
 import RankedBars from '@/components/stats/RankedBars.vue'
 
 // Ordinal blue ramp, validated against the white card surface
-const ORDINAL = ['#86b6ef', '#5598e7', '#2a78d6', '#1c5cab']
+const ORDINAL = ['#bfd7f5', '#9dc3ef', '#7aade9', '#5598e7', '#2a78d6', '#1f66b8', '#16457c']
 
 const data = ref(null)
 const loading = ref(true)
@@ -92,7 +97,7 @@ const needsWorkRows = computed(() =>
 const masteryRows = computed(() =>
   (data.value?.mastery ?? []).map((step, i) => ({
     key: step.label,
-    label: `${step.label} in a row`,
+    label: /^\d+$/.test(step.label) ? `${step.label} in a row` : step.label,
     ratio: step.count,
     value: step.count,
     color: ORDINAL[i],

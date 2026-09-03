@@ -1,5 +1,6 @@
 using Aros.Api.Data;
 using Aros.Api.Data.Entities;
+using Aros.Api.Scheduling;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,8 +10,10 @@ namespace Aros.Api.Controllers;
 [Route("api/[controller]")]
 public class StatsController(AppDbContext db) : ControllerBase
 {
-    private const int MasteredStreak = 3;
     private const int TrendDays = 30;
+
+    /// <summary>The streaks shown one bar each; everything above them is resting or mastered.</summary>
+    private static readonly int[] ActiveStreaks = [.. Enumerable.Range(0, DrawWeight.RestStreak)];
 
     [HttpGet("listening")]
     public async Task<IActionResult> Listening(CancellationToken ct)
@@ -36,7 +39,8 @@ public class StatsController(AppDbContext db) : ControllerBase
             librarySize = clips.Count,
             practiced = played.Count,
             neverPracticed = clips.Count - played.Count,
-            mastered = played.Count(c => c.Stat!.ConsecutiveCorrect >= MasteredStreak),
+            mastered = played.Count(c => DrawWeight.IsMastered(c.Stat!.ConsecutiveCorrect)),
+            resting = played.Count(c => DrawWeight.IsResting(c.Stat!.ConsecutiveCorrect, c.Stat.LastSeenAt)),
             lastPlayed = played.Count == 0 ? null : played.Max(c => c.Stat!.LastSeenAt),
         };
 
@@ -76,16 +80,7 @@ public class StatsController(AppDbContext db) : ControllerBase
             .Take(10)
             .ToList();
 
-        var mastery = new[] { 0, 1, 2, MasteredStreak }
-            .Select(streak => new
-            {
-                streak,
-                label = streak >= MasteredStreak ? $"{MasteredStreak}+" : streak.ToString(),
-                count = streak >= MasteredStreak
-                    ? played.Count(c => c.Stat!.ConsecutiveCorrect >= MasteredStreak)
-                    : played.Count(c => c.Stat!.ConsecutiveCorrect == streak),
-            })
-            .ToList();
+        var mastery = MasteryBands(played.Select(c => c.Stat!.ConsecutiveCorrect));
 
         var untouched = clips
             .Where(c => c.Stat is null)
@@ -127,7 +122,8 @@ public class StatsController(AppDbContext db) : ControllerBase
             practiced = words.Count(w => w.Progress.Count > 0),
             neverPracticed = words.Count(w => w.Progress.Count == 0 && !w.NeedsReview),
             needsReview = words.Count(w => w.NeedsReview),
-            mastered = rows.Count(r => r.Progress.ConsecutiveCorrect >= MasteredStreak),
+            mastered = rows.Count(r => DrawWeight.IsMastered(r.Progress.ConsecutiveCorrect)),
+            resting = rows.Count(r => DrawWeight.IsResting(r.Progress.ConsecutiveCorrect, r.Progress.LastSeenAt)),
             lastPlayed = rows.Count == 0 ? null : rows.Max(r => r.Progress.LastSeenAt),
         };
 
@@ -199,6 +195,41 @@ public class StatsController(AppDbContext db) : ControllerBase
             .Select(a => (DateTime?)a.AnsweredAt)
             .FirstOrDefaultAsync(ct);
 
-        return Ok(new { totals, daily, byDirection, needsWork, untouched, historyStart, trendDays = TrendDays });
+        var mastery = MasteryBands(rows.Select(r => r.Progress.ConsecutiveCorrect));
+
+        return Ok(new { totals, daily, byDirection, needsWork, mastery, untouched, historyStart, trendDays = TrendDays });
+    }
+
+    /// <summary>
+    /// How far along the rest schedule everything is: one bar per streak up to the first rest,
+    /// then the resting band, then what is done with. Counting the resting band by streak rather
+    /// than by clock means an item that has come back but not yet been re-tested still shows here,
+    /// which is where it belongs — it has not lost the streak, it just has not used it yet.
+    /// </summary>
+    private static List<object> MasteryBands(IEnumerable<int> streaks)
+    {
+        var all = streaks.ToList();
+
+        var bands = ActiveStreaks
+            .Select(streak => (object)new
+            {
+                label = streak.ToString(),
+                count = all.Count(s => s == streak),
+            })
+            .ToList();
+
+        bands.Add(new
+        {
+            label = $"Resting ({DrawWeight.RestStreak}–{DrawWeight.MasteryStreak - 1})",
+            count = all.Count(s => s >= DrawWeight.RestStreak && !DrawWeight.IsMastered(s)),
+        });
+
+        bands.Add(new
+        {
+            label = "Mastered",
+            count = all.Count(DrawWeight.IsMastered),
+        });
+
+        return bands;
     }
 }

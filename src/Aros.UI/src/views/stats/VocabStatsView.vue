@@ -7,7 +7,8 @@
       <section class="tiles">
         <StatTile label="Accuracy" :value="percent(data.totals.accuracy)"
                   :note="`${data.totals.correct} of ${data.totals.answers} answers`" />
-        <StatTile label="Mastered" :value="data.totals.mastered" note="word + direction, 3+ in a row" />
+        <StatTile label="Mastered" :value="data.totals.mastered"
+                  :note="`word + direction · ${data.totals.resting} resting`" />
         <StatTile label="Practiced" :value="data.totals.practiced" :of="data.totals.wordsTotal"
                   :note="`${data.totals.neverPracticed} untouched`" />
         <StatTile label="Needs review" :value="data.totals.needsReview" small
@@ -54,6 +55,16 @@
           <RankedBars v-else :rows="needsWorkRows" />
         </section>
 
+        <section class="card">
+          <h2>Mastery</h2>
+          <p class="card-note">
+            Counted per word <em>and</em> direction, so mastering 水 → water leaves water → 水 in
+            full rotation. Five in a row rests a pairing for a week, then two weeks, then four;
+            the next correct answer masters it and it leaves the pool.
+          </p>
+          <RankedBars :rows="masteryRows" scale-to-max />
+        </section>
+
         <section v-if="data.untouched.length" class="card">
           <h2>Untouched <span class="count">{{ data.totals.neverPracticed }}</span></h2>
           <p class="card-note">Ready to test, but never drawn yet.</p>
@@ -83,9 +94,22 @@ const DIRECTION_LABELS = {
   EnglishToCharacters: 'English → 汉字',
 }
 
+// Ordinal blue ramp, validated against the white card surface
+const ORDINAL = ['#bfd7f5', '#9dc3ef', '#7aade9', '#5598e7', '#2a78d6', '#1f66b8', '#16457c']
+
 const data = ref(null)
 const loading = ref(true)
 const error = ref('')
+
+const masteryRows = computed(() =>
+  (data.value?.mastery ?? []).map((step, i) => ({
+    key: step.label,
+    label: /^\d+$/.test(step.label) ? `${step.label} in a row` : step.label,
+    ratio: step.count,
+    value: step.count,
+    color: ORDINAL[i],
+  })),
+)
 
 // Worst first, and directions never tested drop to the bottom rather than reading as 0%
 const directionRows = computed(() =>

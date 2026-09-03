@@ -52,8 +52,16 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
                 "Every sentence sounds like another one in your library, so no fair question can be built. " +
                 "Add sentences that differ audibly, or loosen a sound-alike group.");
 
-        var wanted = Math.Clamp(questionCount, 1, eligible.Count);
-        var answers = PickWeighted(eligible, wanted);
+        // Mastered and resting sentences drop out of the answers — but stay available as wrong
+        // options, since a known sentence is still a perfectly good distractor.
+        var askable = Askable(eligible);
+
+        if (askable.Count == 0)
+            throw new ListeningException(
+                "Every sentence in your library is mastered. Add new ones in Chinese TTS.");
+
+        var wanted = Math.Clamp(questionCount, 1, askable.Count);
+        var answers = PickWeighted(askable, wanted);
 
         var questions = answers
             .Select(answer => BuildQuestion(answer, clips, audible))
@@ -162,6 +170,19 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     private static int DistinctSoundCount(
         TtsClip answer, List<TtsClip> allClips, Dictionary<int, string> audible) =>
         DistinctSounding(answer, allClips, audible).Select(c => audible[c.Id]).Distinct().Count();
+
+    /// <summary>
+    /// Drops mastered sentences for good and resting ones until their rest is up. If every
+    /// remaining sentence is resting, the rests are ignored rather than refusing to play —
+    /// practising early beats not practising.
+    /// </summary>
+    private static List<TtsClip> Askable(List<TtsClip> clips)
+    {
+        var live = clips.Where(c => c.Stat is not { } s || !DrawWeight.IsMastered(s.ConsecutiveCorrect)).ToList();
+        var ready = live.Where(c => c.Stat is not { } s || !DrawWeight.IsResting(s.ConsecutiveCorrect, s.LastSeenAt)).ToList();
+
+        return ready.Count > 0 ? ready : live;
+    }
 
     private static List<TtsClip> PickWeighted(List<TtsClip> clips, int count) =>
         DrawWeight.PickWithoutReplacement(clips, count, Weight);
