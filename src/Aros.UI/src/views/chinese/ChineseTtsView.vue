@@ -33,6 +33,66 @@
 
     <audio ref="player" controls class="player" />
 
+    <!-- Bulk paste: the same thing the box above does, in volume -->
+    <section class="import">
+      <button class="disclosure" @click="showImport = !showImport">
+        {{ showImport ? '▾' : '▸' }} Paste a batch
+      </button>
+
+      <div v-if="showImport" class="panel">
+        <p class="panel-note">
+          Paste the table straight in — Chinese, pinyin, English. Sentences already in the library
+          are left alone, except that a missing pinyin or translation gets filled in.
+        </p>
+
+        <textarea
+          v-model="dump"
+          rows="6"
+          class="dump"
+          placeholder="| 我喜欢茶。 | wo3 xi3 huan5 cha2 | I like tea. |"
+          :disabled="importing"
+          @input="preview = null"
+        />
+
+        <div class="import-row">
+          <button class="secondary-btn" :disabled="importing || !dump.trim()" @click="checkDump">
+            Check
+          </button>
+          <button
+            v-if="preview && preview.parsed"
+            class="primary"
+            :disabled="importing"
+            @click="runImport"
+          >
+            {{ importing ? 'Importing…' : `Import ${preview.parsed}` }}
+          </button>
+        </div>
+
+        <p v-if="preview" class="preview">
+          <template v-if="!preview.parsed">No Chinese sentence found in that text.</template>
+          <template v-else>
+            {{ preview.parsed }} sentences ·
+            <strong>{{ preview.newSentences }} new</strong> (one synthesis each) ·
+            {{ preview.fills }} to fill in · {{ preview.unchanged }} already complete
+          </template>
+        </p>
+
+        <p v-if="importResult" class="preview done">
+          {{ importResult.added }} synthesized, {{ importResult.reused }} already held,
+          {{ importResult.newWords }} new words for review.
+          <template v-if="importResult.failures.length">
+            {{ importResult.failures.length }} failed.
+          </template>
+        </p>
+
+        <ul v-if="importResult && importResult.failures.length" class="failures">
+          <li v-for="f in importResult.failures" :key="f.sentence">
+            <span lang="zh">{{ f.sentence }}</span> — {{ f.message }}
+          </li>
+        </ul>
+      </div>
+    </section>
+
     <section class="library">
       <h2>Library <span class="count">{{ clips.length }}</span></h2>
 
@@ -58,10 +118,44 @@ import { api } from '@/services/api'
 
 const text = ref('')
 const clips = ref([])
+
+const showImport = ref(false)
+const dump = ref('')
+const preview = ref(null)
+const importResult = ref(null)
+const importing = ref(false)
 const lastResult = ref(null)
 const error = ref('')
 const loading = ref(false)
 const player = ref(null)
+
+async function checkDump() {
+  error.value = ''
+  importResult.value = null
+
+  try {
+    preview.value = await api.post('/tts/import/preview', { text: dump.value })
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
+async function runImport() {
+  error.value = ''
+  importing.value = true
+  importResult.value = null
+
+  try {
+    importResult.value = await api.post('/tts/import', { text: dump.value })
+    preview.value = null
+    dump.value = ''
+    await loadClips()
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    importing.value = false
+  }
+}
 
 async function loadClips() {
   try {
@@ -180,6 +274,96 @@ textarea:focus {
 .hint {
   font-size: 0.75rem;
   color: #9ca3af;
+}
+
+.import {
+  margin-top: 1.5rem;
+}
+
+.disclosure {
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #6b7280;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+  padding: 0.9rem;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.panel-note {
+  font-size: 0.8rem;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.dump {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  color: #1a1a1a;
+  resize: vertical;
+}
+
+.dump:focus {
+  outline: none;
+  border-color: #cba6f7;
+}
+
+.import-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.secondary-btn {
+  padding: 0.5rem 1rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #4b5563;
+  background: white;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.secondary-btn:disabled {
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.preview {
+  font-size: 0.82rem;
+  color: #4b5563;
+}
+
+.preview.done {
+  color: #15803d;
+}
+
+.failures {
+  list-style: none;
+  font-size: 0.8rem;
+  color: #b91c1c;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
 }
 
 .error {

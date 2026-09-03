@@ -1,15 +1,24 @@
 using Aros.Api.Data;
 using Aros.Api.Data.Entities;
 using Aros.Api.Scheduling;
+using Aros.Api.Vocab;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace Aros.Api.Listening;
 
 public record QuizOption(int ClipId, string Sentence);
-public record QuizQuestion(Guid Token, IReadOnlyList<QuizOption> Options);
-public record Quiz(IReadOnlyList<QuizQuestion> Questions);
-public record AnswerResult(bool Correct, int CorrectClipId, string CorrectSentence);
+
+public record QuizQuestion(Guid Token, ListeningMode Mode, bool Typed, IReadOnlyList<QuizOption>? Options);
+
+public record Quiz(ListeningMode Mode, IReadOnlyList<QuizQuestion> Questions);
+
+/// <summary>
+/// What the answer was, once it has been given. <paramref name="Expected"/> is the pinyin or the
+/// translation in the writing modes and empty when picking the sentence, where the sentence is
+/// the answer.
+/// </summary>
+public record AnswerResult(bool Correct, int CorrectClipId, string CorrectSentence, string Expected, string? Note);
 
 public class ListeningException(string message) : Exception(message);
 
@@ -20,54 +29,51 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
 
     private static readonly TimeSpan TokenLifetime = TimeSpan.FromHours(2);
 
+    /// <summary>Picking the sentence needs three options; writing what you heard needs a keyboard.</summary>
+    public static bool IsTyped(ListeningMode mode) => mode is not ListeningMode.Characters;
+
     /// <summary>Answer key for one question, held server-side so the page can't read it out of the payload.</summary>
     private sealed class QuestionState
     {
         public required int ClipId { get; init; }
+        public required ListeningMode Mode { get; init; }
         public bool Answered { get; set; }
     }
 
-    public async Task<Quiz> BuildQuizAsync(int questionCount, CancellationToken ct)
+    public async Task<Quiz> BuildQuizAsync(int questionCount, ListeningMode mode, CancellationToken ct)
     {
         var clips = await db.TtsClips
-            .Include(c => c.Stat)
+            .Include(c => c.Stats)
             .AsNoTracking()
             .ToListAsync(ct);
 
-        if (clips.Count < MinimumClips)
-            throw new ListeningException(
-                $"Need at least {MinimumClips} sentences to play. Add more in Chinese TTS — you have {clips.Count}.");
+        // Only the picking mode needs to know what sounds like what
+        var audible = mode == ListeningMode.Characters ? await AudibleFormsAsync(clips, ct) : null;
 
-        var map = Homophones.BuildMap(await db.HomophoneGroups.AsNoTracking().ToListAsync(ct));
-        var audible = clips.ToDictionary(c => c.Id, c => Homophones.AudibleForm(c.Sentence, map));
+        var eligible = mode switch
+        {
+            ListeningMode.Characters => Pickable(clips, audible!),
+            ListeningMode.Pinyin => clips.Where(c => c.Pinyin.Length > 0).ToList(),
+            _ => clips.Where(c => c.English.Length > 0).ToList(),
+        };
 
-        // A clip can only be asked about if at least two other sentences sound different from it —
-        // otherwise the question would come down to a guess between identical-sounding options.
-        var eligible = clips
-            .Where(c => DistinctSoundCount(c, clips, audible) >= 2)
-            .ToList();
+        if (eligible.Count == 0) throw new ListeningException(NothingToAsk(mode, clips));
 
-        if (eligible.Count == 0)
-            throw new ListeningException(
-                "Every sentence sounds like another one in your library, so no fair question can be built. " +
-                "Add sentences that differ audibly, or loosen a sound-alike group.");
-
-        // Mastered and resting sentences drop out of the answers — but stay available as wrong
-        // options, since a known sentence is still a perfectly good distractor.
-        var askable = Askable(eligible);
+        // Mastered and resting sentences drop out of the answers — but in the picking mode they
+        // stay available as wrong options, since a known sentence is still a good distractor.
+        var askable = Askable(eligible, mode);
 
         if (askable.Count == 0)
-            throw new ListeningException(
-                "Every sentence in your library is mastered. Add new ones in Chinese TTS.");
+            throw new ListeningException("Every sentence you can be asked here is mastered. Add new ones in Chinese TTS.");
 
         var wanted = Math.Clamp(questionCount, 1, askable.Count);
-        var answers = PickWeighted(askable, wanted);
+        var answers = PickWeighted(askable, mode, wanted);
 
         var questions = answers
-            .Select(answer => BuildQuestion(answer, clips, audible))
+            .Select(answer => BuildQuestion(answer, mode, clips, audible))
             .ToList();
 
-        return new Quiz(questions);
+        return new Quiz(mode, questions);
     }
 
     public async Task<TtsClip> GetClipForTokenAsync(Guid token, CancellationToken ct)
@@ -77,59 +83,106 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
                ?? throw new ListeningException("That clip no longer exists.");
     }
 
-    public async Task<AnswerResult> AnswerAsync(Guid token, int selectedClipId, CancellationToken ct)
+    public async Task<AnswerResult> AnswerAsync(Guid token, int? selectedClipId, string? text, CancellationToken ct)
     {
         var state = Lookup(token);
 
         var clip = await db.TtsClips
-            .Include(c => c.Stat)
+            .Include(c => c.Stats)
             .FirstOrDefaultAsync(c => c.Id == state.ClipId, ct)
             ?? throw new ListeningException("That clip no longer exists.");
 
-        var correct = selectedClipId == clip.Id;
+        var (correct, note) = Judge(clip, state.Mode, selectedClipId, text);
 
         // Replaying an already-answered question must not double-count the score.
         if (!state.Answered)
         {
             state.Answered = true;
-            RecordScore(clip, correct);
-            db.ListeningAnswers.Add(new ListeningAnswer { TtsClipId = clip.Id, Correct = correct });
+            RecordScore(clip, state.Mode, correct);
+            db.ListeningAnswers.Add(new ListeningAnswer
+            {
+                TtsClipId = clip.Id,
+                Mode = state.Mode,
+                Correct = correct,
+            });
             await db.SaveChangesAsync(ct);
         }
 
-        return new AnswerResult(correct, clip.Id, clip.Sentence);
+        return new AnswerResult(correct, clip.Id, clip.Sentence, Expected(clip, state.Mode), note);
     }
 
-    private static void RecordScore(TtsClip clip, bool correct)
+    private static (bool Correct, string? Note) Judge(
+        TtsClip clip, ListeningMode mode, int? selectedClipId, string? text)
     {
-        var stat = clip.Stat ??= new TtsClipStat { TtsClipId = clip.Id };
+        var given = text ?? "";
 
-        if (correct)
+        return mode switch
         {
-            stat.CorrectCount++;
-            stat.ConsecutiveCorrect++;
-        }
-        else
-        {
-            stat.WrongCount++;
-            stat.ConsecutiveCorrect = 0;
-        }
+            ListeningMode.Characters => (selectedClipId == clip.Id, null),
 
-        stat.LastSeenAt = DateTime.UtcNow;
+            ListeningMode.Pinyin =>
+                AnswerCheck.PinyinMatches(clip.Pinyin, given)
+                    ? (true, null)
+                    : (false, AnswerCheck.IsToneOnlyMistake(clip.Pinyin, given)
+                        ? "Right syllables, wrong tone."
+                        : null),
+
+            _ => (AnswerCheck.SentenceMatches(clip.English, given), null),
+        };
     }
 
-    private QuizQuestion BuildQuestion(TtsClip answer, List<TtsClip> allClips, Dictionary<int, string> audible)
+    private static string Expected(TtsClip clip, ListeningMode mode) => mode switch
     {
-        var options = PickDistractors(answer, allClips, audible)
-            .Append(answer)
-            .OrderBy(_ => Random.Shared.Next())
-            .Select(c => new QuizOption(c.Id, c.Sentence))
-            .ToList();
+        ListeningMode.Pinyin => clip.Pinyin,
+        ListeningMode.English => clip.English,
+        _ => "",
+    };
+
+    private static string NothingToAsk(ListeningMode mode, List<TtsClip> clips) => mode switch
+    {
+        ListeningMode.Characters when clips.Count < MinimumClips =>
+            $"Need at least {MinimumClips} sentences to play. Add more in Chinese TTS — you have {clips.Count}.",
+
+        ListeningMode.Characters =>
+            "Every sentence sounds like another one in your library, so no fair question can be built. " +
+            "Add sentences that differ audibly, or loosen a sound-alike group.",
+
+        ListeningMode.Pinyin =>
+            "No sentence has its pinyin yet. Import sentences with pinyin and English in Chinese TTS.",
+
+        _ => "No sentence has an English translation yet. Import sentences with pinyin and English in Chinese TTS.",
+    };
+
+    private async Task<Dictionary<int, string>> AudibleFormsAsync(List<TtsClip> clips, CancellationToken ct)
+    {
+        var map = Homophones.BuildMap(await db.HomophoneGroups.AsNoTracking().ToListAsync(ct));
+        return clips.ToDictionary(c => c.Id, c => Homophones.AudibleForm(c.Sentence, map));
+    }
+
+    /// <summary>
+    /// Sentences that can be the answer in the picking mode: at least two others must sound
+    /// different from them, or the question comes down to a guess between identical options.
+    /// </summary>
+    private static List<TtsClip> Pickable(List<TtsClip> clips, Dictionary<int, string> audible) =>
+        clips.Count < MinimumClips
+            ? []
+            : clips.Where(c => DistinctSoundCount(c, clips, audible) >= 2).ToList();
+
+    private QuizQuestion BuildQuestion(
+        TtsClip answer, ListeningMode mode, List<TtsClip> allClips, Dictionary<int, string>? audible)
+    {
+        var options = mode == ListeningMode.Characters
+            ? PickDistractors(answer, allClips, audible!)
+                .Append(answer)
+                .OrderBy(_ => Random.Shared.Next())
+                .Select(c => new QuizOption(c.Id, c.Sentence))
+                .ToList()
+            : null;
 
         var token = Guid.NewGuid();
-        cache.Set(CacheKey(token), new QuestionState { ClipId = answer.Id }, TokenLifetime);
+        cache.Set(CacheKey(token), new QuestionState { ClipId = answer.Id, Mode = mode }, TokenLifetime);
 
-        return new QuizQuestion(token, options);
+        return new QuizQuestion(token, mode, IsTyped(mode), options);
     }
 
     /// <summary>
@@ -171,24 +224,51 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         TtsClip answer, List<TtsClip> allClips, Dictionary<int, string> audible) =>
         DistinctSounding(answer, allClips, audible).Select(c => audible[c.Id]).Distinct().Count();
 
+    private static void RecordScore(TtsClip clip, ListeningMode mode, bool correct)
+    {
+        var stat = Stat(clip, mode);
+
+        if (stat is null)
+        {
+            stat = new TtsClipStat { TtsClipId = clip.Id, Mode = mode };
+            clip.Stats.Add(stat);
+        }
+
+        if (correct)
+        {
+            stat.CorrectCount++;
+            stat.ConsecutiveCorrect++;
+        }
+        else
+        {
+            stat.WrongCount++;
+            stat.ConsecutiveCorrect = 0;
+        }
+
+        stat.LastSeenAt = DateTime.UtcNow;
+    }
+
     /// <summary>
-    /// Drops mastered sentences for good and resting ones until their rest is up. If every
-    /// remaining sentence is resting, the rests are ignored rather than refusing to play —
+    /// Drops sentences mastered in this mode for good and resting ones until their rest is up. If
+    /// every remaining sentence is resting, the rests are ignored rather than refusing to play —
     /// practising early beats not practising.
     /// </summary>
-    private static List<TtsClip> Askable(List<TtsClip> clips)
+    private static List<TtsClip> Askable(List<TtsClip> clips, ListeningMode mode)
     {
-        var live = clips.Where(c => c.Stat is not { } s || !DrawWeight.IsMastered(s.ConsecutiveCorrect)).ToList();
-        var ready = live.Where(c => c.Stat is not { } s || !DrawWeight.IsResting(s.ConsecutiveCorrect, s.LastSeenAt)).ToList();
+        var live = clips.Where(c => Stat(c, mode) is not { } s || !DrawWeight.IsMastered(s.ConsecutiveCorrect)).ToList();
+        var ready = live.Where(c => Stat(c, mode) is not { } s || !DrawWeight.IsResting(s.ConsecutiveCorrect, s.LastSeenAt)).ToList();
 
         return ready.Count > 0 ? ready : live;
     }
 
-    private static List<TtsClip> PickWeighted(List<TtsClip> clips, int count) =>
-        DrawWeight.PickWithoutReplacement(clips, count, Weight);
+    private static TtsClipStat? Stat(TtsClip clip, ListeningMode mode) =>
+        clip.Stats.FirstOrDefault(s => s.Mode == mode);
 
-    private static double Weight(TtsClip clip) =>
-        clip.Stat is { } stat
+    private static List<TtsClip> PickWeighted(List<TtsClip> clips, ListeningMode mode, int count) =>
+        DrawWeight.PickWithoutReplacement(clips, count, clip => Weight(clip, mode));
+
+    private static double Weight(TtsClip clip, ListeningMode mode) =>
+        Stat(clip, mode) is { } stat
             ? DrawWeight.For(stat.WrongCount, stat.ConsecutiveCorrect, stat.LastSeenAt)
             : DrawWeight.Unseen;
 

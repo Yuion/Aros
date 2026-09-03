@@ -50,6 +50,33 @@ public static partial class AnswerCheck
         return ToneDigits().Replace(want, "") == ToneDigits().Replace(got, "");
     }
 
+    [GeneratedRegex(@"[.!?。！？…]+$")]
+    private static partial Regex TrailingStop();
+
+    /// <summary>
+    /// A whole sentence against the translation it was imported with. Deliberately strict — only
+    /// case, spacing, curly quotes and a final full stop are forgiven, because for a sentence
+    /// there is no list of accepted senses to fall back on and any looser rule would start
+    /// accepting translations that say something else. A correct rewording marks as wrong; that
+    /// is the cost of holding it to the text you were given.
+    /// </summary>
+    public static bool SentenceMatches(string expected, string given)
+    {
+        var want = NormalizeSentence(expected);
+        var got = NormalizeSentence(given);
+
+        return want.Length > 0 && want == got;
+    }
+
+    private static string NormalizeSentence(string value)
+    {
+        var text = value.Trim().ToLowerInvariant()
+            .Replace('’', '\'').Replace('‘', '\'')     // phone keyboards produce curly quotes
+            .Replace('“', '"').Replace('”', '"');
+
+        return TrailingStop().Replace(Whitespace().Replace(text, " ").Trim(), "").Trim();
+    }
+
     /// <summary>Any single meaning the entry lists counts as the answer.</summary>
     public static bool EnglishMatches(string expectedField, string given)
     {

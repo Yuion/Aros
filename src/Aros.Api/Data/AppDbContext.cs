@@ -78,10 +78,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             // The cache key — one paid synthesis per distinct sentence
             entity.HasIndex(c => c.Sentence).IsUnique();
 
-            entity.HasOne(c => c.Stat)
+            entity.HasMany(c => c.Stats)
                   .WithOne(s => s.TtsClip)
-                  .HasForeignKey<TtsClipStat>(s => s.TtsClipId)
+                  .HasForeignKey(s => s.TtsClipId)
                   .OnDelete(DeleteBehavior.Cascade);
         });
+
+        // One score per clip and mode, as VocabProgress is per word and direction
+        modelBuilder.Entity<TtsClipStat>(entity =>
+            entity.HasIndex(s => new { s.TtsClipId, s.Mode }).IsUnique());
     }
 }

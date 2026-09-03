@@ -8,6 +8,7 @@ public class ListeningAnswer
 {
     public int Id { get; set; }
     public int TtsClipId { get; set; }
+    public ListeningMode Mode { get; set; }
     public bool Correct { get; set; }
     public DateTime AnsweredAt { get; set; } = DateTime.UtcNow;
 

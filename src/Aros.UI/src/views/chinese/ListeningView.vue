@@ -1,19 +1,39 @@
 <template>
   <div class="landing">
     <h1>Chinese Listening</h1>
-    <p class="subtitle">Ten clips. Pick the sentence you heard.</p>
+    <p class="subtitle">Ten clips. {{ MODES.find((m) => m.id === mode).blurb }}</p>
 
     <button class="play-button" :disabled="!ready" @click="start">
       <span class="play-icon">▶</span>
       <span class="play-label">Play</span>
     </button>
 
+    <!-- One mode per round: the writing modes only reach sentences that carry that reading -->
+    <ul class="modes">
+      <li v-for="option in MODES" :key="option.id">
+        <button
+          class="mode"
+          :class="{ active: mode === option.id, empty: !available(option.id) }"
+          @click="mode = option.id"
+        >
+          <span class="mode-name">{{ option.label }}</span>
+          <span class="mode-count">{{ available(option.id) }}</span>
+        </button>
+      </li>
+    </ul>
+
     <p v-if="loading" class="note">Checking your library…</p>
     <p v-else-if="!ready" class="note warn">
-      You need at least 3 sentences to play. Your library has {{ clipCount }}.
+      <template v-if="mode === 'Characters'">
+        You need at least 3 sentences to play. Your library has {{ clipCount }}.
+      </template>
+      <template v-else>
+        No sentence carries its {{ mode === 'Pinyin' ? 'pinyin' : 'English' }} yet — paste a batch
+        with pinyin and English to unlock this mode.
+      </template>
       <RouterLink to="/chinese-tts">Add some in Chinese TTS →</RouterLink>
     </p>
-    <p v-else class="note">{{ clipCount }} sentences in your library.</p>
+    <p v-else class="note">{{ available(mode) }} sentences available in this mode.</p>
 
     <section class="homophones">
       <button class="disclosure" @click="showGroups = !showGroups">
@@ -52,8 +72,17 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { api } from '@/services/api'
 
+const MODES = [
+  { id: 'Characters', label: 'Pick it', blurb: 'Pick the sentence you heard.' },
+  { id: 'Pinyin', label: 'Pinyin', blurb: 'Write the pinyin of what you heard.' },
+  { id: 'English', label: 'English', blurb: 'Write the English of what you heard.' },
+]
+
 const router = useRouter()
 const clipCount = ref(0)
+const withPinyin = ref(0)
+const withEnglish = ref(0)
+const mode = ref('Characters')
 const loading = ref(true)
 
 const groups = ref([])
@@ -62,7 +91,16 @@ const newChars = ref('')
 const newReading = ref('')
 const groupError = ref('')
 
-const ready = computed(() => clipCount.value >= 3)
+// Picking needs three sentences to build a question from; writing needs only the reading itself
+function available(id) {
+  if (id === 'Pinyin') return withPinyin.value
+  if (id === 'English') return withEnglish.value
+  return clipCount.value
+}
+
+const ready = computed(() =>
+  mode.value === 'Characters' ? clipCount.value >= 3 : available(mode.value) > 0,
+)
 
 async function loadGroups() {
   try {
@@ -100,6 +138,8 @@ onMounted(async () => {
   try {
     const clips = await api.get('/tts/clips')
     clipCount.value = clips.length
+    withPinyin.value = clips.filter((c) => c.pinyin).length
+    withEnglish.value = clips.filter((c) => c.english).length
   } catch {
     clipCount.value = 0
   } finally {
@@ -110,11 +150,58 @@ onMounted(async () => {
 })
 
 function start() {
-  router.push('/chinese-listening/play')
+  router.push({ path: '/chinese-listening/play', query: { mode: mode.value } })
 }
 </script>
 
 <style scoped>
+.modes {
+  list-style: none;
+  display: flex;
+  gap: 0.5rem;
+  padding: 0;
+  margin: 0.25rem 0 0;
+}
+
+.mode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 5.5rem;
+  padding: 0.5rem 0.75rem;
+  font-family: inherit;
+  background: white;
+  border: 2px solid #e5e7eb;
+  border-radius: 10px;
+  color: #4b5563;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.mode:hover {
+  border-color: #cba6f7;
+}
+
+.mode.active {
+  border-color: #6d5bd0;
+  color: #6d5bd0;
+}
+
+.mode-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.mode-count {
+  font-size: 0.72rem;
+  color: #9ca3af;
+}
+
+.mode.empty .mode-count {
+  color: #b91c1c;
+}
+
 .landing {
   display: flex;
   flex-direction: column;

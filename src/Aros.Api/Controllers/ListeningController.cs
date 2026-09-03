@@ -1,10 +1,11 @@
+using Aros.Api.Data.Entities;
 using Aros.Api.Listening;
 using Aros.Api.Tts;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Aros.Api.Controllers;
 
-public record AnswerRequest(Guid Token, int SelectedClipId);
+public record AnswerRequest(Guid Token, int? SelectedClipId, string? Text);
 
 [ApiController]
 [Route("api/[controller]")]
@@ -13,19 +14,22 @@ public class ListeningController(ListeningService listening, TtsService tts) : C
     [HttpPost("quiz")]
     public async Task<IActionResult> Quiz(
         [FromQuery] int questions = ListeningService.DefaultQuestionCount,
+        [FromQuery] ListeningMode mode = ListeningMode.Characters,
         CancellationToken ct = default)
     {
         try
         {
-            var quiz = await listening.BuildQuizAsync(questions, ct);
+            var quiz = await listening.BuildQuizAsync(questions, mode, ct);
 
             return Ok(new
             {
+                mode = quiz.Mode.ToString(),
+                typed = ListeningService.IsTyped(quiz.Mode),
                 questions = quiz.Questions.Select(q => new
                 {
                     token = q.Token,
                     audioUrl = $"/api/listening/audio/{q.Token}",
-                    options = q.Options.Select(o => new { clipId = o.ClipId, sentence = o.Sentence }),
+                    options = q.Options?.Select(o => new { clipId = o.ClipId, sentence = o.Sentence }),
                 }),
             });
         }
@@ -57,13 +61,15 @@ public class ListeningController(ListeningService listening, TtsService tts) : C
     {
         try
         {
-            var result = await listening.AnswerAsync(request.Token, request.SelectedClipId, ct);
+            var result = await listening.AnswerAsync(request.Token, request.SelectedClipId, request.Text, ct);
 
             return Ok(new
             {
                 correct = result.Correct,
                 correctClipId = result.CorrectClipId,
                 correctSentence = result.CorrectSentence,
+                expected = result.Expected,
+                note = result.Note,
             });
         }
         catch (ListeningException ex)

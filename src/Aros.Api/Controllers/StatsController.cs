@@ -19,14 +19,16 @@ public class StatsController(AppDbContext db) : ControllerBase
     public async Task<IActionResult> Listening(CancellationToken ct)
     {
         var clips = await db.TtsClips
-            .Include(c => c.Stat)
+            .Include(c => c.Stats)
             .AsNoTracking()
             .ToListAsync(ct);
 
-        var played = clips.Where(c => c.Stat is not null).ToList();
+        // One row per sentence and mode, the way the vocabulary tab counts word and direction
+        var rows = clips.SelectMany(c => c.Stats.Select(s => new { Clip = c, Stat = s })).ToList();
+        var played = clips.Where(c => c.Stats.Count > 0).ToList();
 
-        var correct = played.Sum(c => c.Stat!.CorrectCount);
-        var wrong = played.Sum(c => c.Stat!.WrongCount);
+        var correct = rows.Sum(r => r.Stat.CorrectCount);
+        var wrong = rows.Sum(r => r.Stat.WrongCount);
         var answers = correct + wrong;
 
         // Running totals cover all time, including rounds played before answer history existed.
@@ -39,9 +41,11 @@ public class StatsController(AppDbContext db) : ControllerBase
             librarySize = clips.Count,
             practiced = played.Count,
             neverPracticed = clips.Count - played.Count,
-            mastered = played.Count(c => DrawWeight.IsMastered(c.Stat!.ConsecutiveCorrect)),
-            resting = played.Count(c => DrawWeight.IsResting(c.Stat!.ConsecutiveCorrect, c.Stat.LastSeenAt)),
-            lastPlayed = played.Count == 0 ? null : played.Max(c => c.Stat!.LastSeenAt),
+            mastered = rows.Count(r => DrawWeight.IsMastered(r.Stat.ConsecutiveCorrect)),
+            resting = rows.Count(r => DrawWeight.IsResting(r.Stat.ConsecutiveCorrect, r.Stat.LastSeenAt)),
+            withPinyin = clips.Count(c => c.Pinyin.Length > 0),
+            withEnglish = clips.Count(c => c.English.Length > 0),
+            lastPlayed = rows.Count == 0 ? null : rows.Max(r => r.Stat.LastSeenAt),
         };
 
         var since = DateTime.UtcNow.Date.AddDays(-(TrendDays - 1));
@@ -65,25 +69,50 @@ public class StatsController(AppDbContext db) : ControllerBase
             .ToList();
 
         // Worst first — this is the study list
-        var needsWork = played
-            .Select(c => new
+        var needsWork = rows
+            .Where(r => r.Stat.WrongCount > 0)
+            .Select(r => new
             {
-                sentence = c.Sentence,
-                attempts = c.Stat!.CorrectCount + c.Stat.WrongCount,
-                correct = c.Stat.CorrectCount,
-                wrong = c.Stat.WrongCount,
-                accuracy = (double)c.Stat.CorrectCount / (c.Stat.CorrectCount + c.Stat.WrongCount),
+                sentence = r.Clip.Sentence,
+                mode = r.Stat.Mode.ToString(),
+                attempts = r.Stat.CorrectCount + r.Stat.WrongCount,
+                correct = r.Stat.CorrectCount,
+                wrong = r.Stat.WrongCount,
+                accuracy = (double)r.Stat.CorrectCount / (r.Stat.CorrectCount + r.Stat.WrongCount),
             })
-            .Where(c => c.wrong > 0)
             .OrderBy(c => c.accuracy)
             .ThenByDescending(c => c.wrong)
             .Take(10)
             .ToList();
 
-        var mastery = MasteryBands(played.Select(c => c.Stat!.ConsecutiveCorrect));
+        var mastery = MasteryBands(rows.Select(r => r.Stat.ConsecutiveCorrect));
+
+        // Hearing a sentence and writing out what you heard are different skills
+        var byMode = Enum.GetValues<ListeningMode>()
+            .Select(mode =>
+            {
+                var forMode = rows.Where(r => r.Stat.Mode == mode).ToList();
+                var right = forMode.Sum(r => r.Stat.CorrectCount);
+                var total = right + forMode.Sum(r => r.Stat.WrongCount);
+
+                return new
+                {
+                    mode = mode.ToString(),
+                    answers = total,
+                    correct = right,
+                    accuracy = total == 0 ? (double?)null : (double)right / total,
+                    available = mode switch
+                    {
+                        ListeningMode.Pinyin => clips.Count(c => c.Pinyin.Length > 0),
+                        ListeningMode.English => clips.Count(c => c.English.Length > 0),
+                        _ => clips.Count,
+                    },
+                };
+            })
+            .ToList();
 
         var untouched = clips
-            .Where(c => c.Stat is null)
+            .Where(c => c.Stats.Count == 0)
             .OrderBy(c => c.CreatedAt)
             .Select(c => c.Sentence)
             .Take(20)
@@ -95,7 +124,7 @@ public class StatsController(AppDbContext db) : ControllerBase
             .Select(a => (DateTime?)a.AnsweredAt)
             .FirstOrDefaultAsync(ct);
 
-        return Ok(new { totals, daily, needsWork, mastery, untouched, historyStart, trendDays = TrendDays });
+        return Ok(new { totals, daily, byMode, needsWork, mastery, untouched, historyStart, trendDays = TrendDays });
     }
 
     [HttpGet("vocab")]

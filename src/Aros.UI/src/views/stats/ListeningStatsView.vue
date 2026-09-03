@@ -48,6 +48,16 @@
         </section>
 
         <section class="card">
+          <h2>By mode</h2>
+          <p class="card-note">
+            Picking a sentence out of three and writing out what you heard are different skills,
+            and they are scored apart. A mode with no answers yet shows how many sentences carry
+            the reading it needs.
+          </p>
+          <RankedBars :rows="modeRows" />
+        </section>
+
+        <section class="card">
           <h2>Mastery</h2>
           <p class="card-note">
             Sentences by how many times in a row you've got them right. Five in a row sends a
@@ -83,10 +93,30 @@ const data = ref(null)
 const loading = ref(true)
 const error = ref('')
 
+const MODE_LABELS = {
+  Characters: 'pick it',
+  Pinyin: 'write pinyin',
+  English: 'write English',
+}
+
+// Worst first, and modes never played drop to the bottom rather than reading as 0%
+const modeRows = computed(() =>
+  [...(data.value?.byMode ?? [])]
+    .sort((a, b) => (a.accuracy ?? 2) - (b.accuracy ?? 2))
+    .map((row) => ({
+      key: row.mode,
+      label: MODE_LABELS[row.mode] ?? row.mode,
+      ratio: row.accuracy ?? 0,
+      value: row.accuracy == null ? '—' : percent(row.accuracy),
+      detail: row.answers ? `${row.correct}/${row.answers}` : `${row.available} available`,
+    })),
+)
+
 const needsWorkRows = computed(() =>
-  (data.value?.needsWork ?? []).map((row) => ({
-    key: row.sentence,
+  (data.value?.needsWork ?? []).map((row, i) => ({
+    key: `${row.sentence}-${row.mode}-${i}`,
     label: row.sentence,
+    sublabel: MODE_LABELS[row.mode] ?? row.mode,
     lang: 'zh',
     ratio: row.accuracy,
     value: percent(row.accuracy),

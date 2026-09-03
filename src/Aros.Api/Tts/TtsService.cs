@@ -19,8 +19,12 @@ public class TtsService(
 
     /// <summary>
     /// Returns the clip for a sentence, synthesizing it only if we have never paid for it before.
+    /// A pinyin or English reading given alongside fills in a blank one on a sentence already
+    /// held — that is how the library gains the data the writing modes need without losing the
+    /// practice history attached to it.
     /// </summary>
-    public async Task<TtsResult> GetOrCreateAsync(string? rawText, CancellationToken ct)
+    public async Task<TtsResult> GetOrCreateAsync(
+        string? rawText, string? pinyin = null, string? english = null, CancellationToken ct = default)
     {
         var sentence = ChineseText.Normalize(rawText);
 
@@ -32,7 +36,10 @@ public class TtsService(
         var existing = await db.TtsClips.FirstOrDefaultAsync(c => c.Sentence == sentence, ct);
 
         if (existing is not null && File.Exists(ResolvePath(existing.Location)))
+        {
+            if (FillBlanks(existing, pinyin, english)) await db.SaveChangesAsync(ct);
             return new TtsResult(existing, Cached: true);
+        }
 
         if (existing is not null)
             logger.LogWarning("Audio file for clip {Id} is missing at {Location}; re-synthesizing.",
@@ -49,6 +56,7 @@ public class TtsService(
             existing.Location = location;
             existing.Voice = _options.Voice;
             existing.DurationSeconds = audio.DurationSeconds;
+            FillBlanks(existing, pinyin, english);
             await db.SaveChangesAsync(ct);
             return new TtsResult(existing, Cached: false);
         }
@@ -59,6 +67,8 @@ public class TtsService(
             Location = location,
             Voice = _options.Voice,
             DurationSeconds = audio.DurationSeconds,
+            Pinyin = Clean(pinyin),
+            English = Clean(english),
         };
 
         db.TtsClips.Add(clip);
@@ -80,6 +90,32 @@ public class TtsService(
 
         return new TtsResult(clip, Cached: false);
     }
+
+    /// <summary>
+    /// Fills a blank reading, never overwrites one. A sentence imported twice with two different
+    /// translations keeps the first: silently rewriting the answer of something already practised
+    /// would score past answers against text they were never judged on.
+    /// </summary>
+    private static bool FillBlanks(TtsClip clip, string? pinyin, string? english)
+    {
+        var changed = false;
+
+        if (clip.Pinyin.Length == 0 && Clean(pinyin) is { Length: > 0 } p)
+        {
+            clip.Pinyin = p;
+            changed = true;
+        }
+
+        if (clip.English.Length == 0 && Clean(english) is { Length: > 0 } e)
+        {
+            clip.English = e;
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    private static string Clean(string? value) => value?.Trim() ?? "";
 
     public Stream OpenAudio(TtsClip clip) =>
         File.OpenRead(ResolvePath(clip.Location));

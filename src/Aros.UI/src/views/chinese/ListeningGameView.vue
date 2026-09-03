@@ -27,7 +27,10 @@
 
       <button class="listen" title="Play the clip" @click="replay">🔊</button>
 
-      <ul class="options">
+      <p class="mode-label">{{ MODE_LABELS[mode] }}</p>
+
+      <!-- Pick the sentence -->
+      <ul v-if="!typed" class="options">
         <li v-for="option in current.options" :key="option.clipId">
           <button
             class="option"
@@ -41,9 +44,28 @@
         </li>
       </ul>
 
+      <!-- Write what you heard -->
+      <form v-else class="typed" @submit.prevent="submitTyped">
+        <input
+          ref="field"
+          v-model="text"
+          :placeholder="mode === 'Pinyin' ? 'wo3 he1 shui3' : 'I drink water'"
+          :disabled="!!answer"
+          autocapitalize="none"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button v-if="!answer" type="submit" class="primary" :disabled="!text.trim()">Check</button>
+      </form>
+
       <div v-if="answer" class="feedback">
         <p :class="answer.correct ? 'right' : 'wrong'">
           {{ answer.correct ? '✓ Correct' : '✗ Not quite' }}
+        </p>
+        <p v-if="answer.note" class="note">{{ answer.note }}</p>
+        <p v-if="typed" class="expected">
+          <span lang="zh">{{ answer.correctSentence }}</span>
+          <span class="expected-answer">{{ answer.expected }}</span>
         </p>
         <button class="primary" @click="next">
           {{ index + 1 === questions.length ? 'See score' : 'Next' }}
@@ -57,17 +79,29 @@
 
 <script setup>
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import { api } from '@/services/api'
+
+const MODE_LABELS = {
+  Characters: 'Pick what you heard',
+  Pinyin: 'Write the pinyin',
+  English: 'Write the English',
+}
+
+const route = useRoute()
 
 const questions = ref([])
 const index = ref(0)
 const answer = ref(null)
+const text = ref('')
+const mode = ref('Characters')
+const typed = ref(false)
 const correctCount = ref(0)
 const finished = ref(false)
 const loading = ref(true)
 const error = ref('')
 const player = ref(null)
+const field = ref(null)
 
 const current = computed(() => questions.value[index.value])
 
@@ -83,14 +117,19 @@ async function loadQuiz() {
   error.value = ''
   finished.value = false
   answer.value = null
+  text.value = ''
   index.value = 0
   correctCount.value = 0
 
   try {
-    const quiz = await api.post('/listening/quiz?questions=10')
+    const wanted = route.query.mode ?? 'Characters'
+    const quiz = await api.post(`/listening/quiz?questions=10&mode=${encodeURIComponent(wanted)}`)
+    mode.value = quiz.mode
+    typed.value = quiz.typed
     questions.value = quiz.questions
     await nextTick()
     replay()
+    field.value?.focus()
   } catch (e) {
     error.value = e.message
   } finally {
@@ -107,13 +146,18 @@ function replay() {
 
 async function choose(option) {
   if (answer.value) return
+  await send({ selectedClipId: option.clipId })
+}
 
+async function submitTyped() {
+  if (answer.value || !text.value.trim()) return
+  await send({ text: text.value })
+}
+
+async function send(payload) {
   try {
-    const result = await api.post('/listening/answer', {
-      token: current.value.token,
-      selectedClipId: option.clipId,
-    })
-    answer.value = { ...result, selectedClipId: option.clipId }
+    const result = await api.post('/listening/answer', { token: current.value.token, ...payload })
+    answer.value = { ...result, selectedClipId: payload.selectedClipId }
     if (result.correct) correctCount.value++
   } catch (e) {
     error.value = e.message
@@ -129,6 +173,7 @@ function optionClass(option) {
 
 async function next() {
   answer.value = null
+  text.value = ''
 
   if (index.value + 1 >= questions.value.length) {
     finished.value = true
@@ -138,6 +183,7 @@ async function next() {
   index.value++
   await nextTick()
   replay()
+  field.value?.focus()
 }
 
 onMounted(loadQuiz)
@@ -200,6 +246,63 @@ onMounted(loadQuiz)
 
 .listen:hover {
   transform: translateY(-2px);
+}
+
+.mode-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #9ca3af;
+}
+
+.typed {
+  display: flex;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.typed input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.7rem 0.85rem;
+  font-family: inherit;
+  font-size: 1.1rem;
+  border: 2px solid #e5e7eb;
+  border-radius: 10px;
+  background: white;
+  color: #1a1a1a;
+}
+
+.typed input:focus {
+  outline: none;
+  border-color: #cba6f7;
+}
+
+.note {
+  font-size: 0.85rem;
+  color: #92400e;
+  background: #fffbeb;
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+}
+
+.expected {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.95rem;
+  color: #4b5563;
+}
+
+.expected span:first-child {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.expected-answer {
+  font-size: 1rem;
 }
 
 .options {
