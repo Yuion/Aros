@@ -70,9 +70,9 @@
         <section class="card">
           <h2>Mastery</h2>
           <p class="card-note">
-            Sentences by how many times in a row you've got them right. Five in a row sends a
-            sentence to rest for a week, then two weeks, then four; the next correct answer
-            masters it and it leaves the pool.
+            Sentences by how many times in a row you've got them right. From the third the
+            sentence rests before it can come back — 12 hours, 36 hours, then a week, two and
+            four; the eighth correct answer masters it and it leaves the pool.
           </p>
           <RankedBars :rows="masteryRows" scale-to-max />
         </section>

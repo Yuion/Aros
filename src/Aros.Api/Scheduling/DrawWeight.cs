@@ -7,10 +7,10 @@ namespace Aros.Api.Scheduling;
 /// Misses raise the weight; a correct streak lowers it; time erodes the streak, so nothing
 /// stays suppressed merely because it was known once. Score and recency end up as one number.
 ///
-/// On top of that sits an expanding rest schedule: five correct answers in a row take an item
-/// out of the pool for a week, and each further correct answer doubles the wait until it is
-/// finally mastered and leaves the pool for good. The weight decides *how often* something
-/// comes up; the rest decides *whether* it comes up at all.
+/// On top of that sits an expanding rest schedule: from the third correct answer in a row an item
+/// leaves the pool for a while, and each further correct answer lengthens the wait — hours at
+/// first, then weeks — until it is finally mastered and leaves for good. The weight decides
+/// *how often* something comes up; the rest decides *whether* it comes up at all.
 /// </summary>
 public static class DrawWeight
 {
@@ -24,13 +24,24 @@ public static class DrawWeight
     public const double Unseen = 1.0;
 
     /// <summary>Correct answers in a row that first send an item to rest.</summary>
-    public const int RestStreak = 5;
+    public const int RestStreak = 3;
 
-    /// <summary>How long each rest lasts, for streaks <see cref="RestStreak"/> upwards.</summary>
-    private static readonly int[] RestLengths = [7, 14, 28];
+    /// <summary>
+    /// How long each rest lasts, for streaks <see cref="RestStreak"/> upwards. The first two are
+    /// hours rather than days: three right in a row means it is sticking, not that it is learned,
+    /// so the item is held back for the rest of the session rather than the rest of the week.
+    /// </summary>
+    private static readonly TimeSpan[] RestLengths =
+    [
+        TimeSpan.FromHours(12),
+        TimeSpan.FromHours(36),
+        TimeSpan.FromDays(7),
+        TimeSpan.FromDays(14),
+        TimeSpan.FromDays(28),
+    ];
 
     /// <summary>Streak at which an item is done: it leaves the pool and is not asked again.</summary>
-    public const int MasteryStreak = RestStreak + 3;   // 5 correct, then 6, 7, and the 8th masters it
+    public static readonly int MasteryStreak = RestStreak + RestLengths.Length;   // the 8th correct answer
 
     public static double For(int wrongCount, int consecutiveCorrect, DateTime? lastSeenAt)
     {
@@ -41,14 +52,14 @@ public static class DrawWeight
     public static bool IsMastered(int consecutiveCorrect) => consecutiveCorrect >= MasteryStreak;
 
     /// <summary>How long this streak rests, or null if it is too short to rest or already mastered.</summary>
-    public static int? RestDays(int consecutiveCorrect) =>
+    public static TimeSpan? RestLength(int consecutiveCorrect) =>
         consecutiveCorrect < RestStreak || IsMastered(consecutiveCorrect)
             ? null
             : RestLengths[consecutiveCorrect - RestStreak];
 
     public static DateTime? RestingUntil(int consecutiveCorrect, DateTime? lastSeenAt) =>
-        RestDays(consecutiveCorrect) is { } days && lastSeenAt is { } seen
-            ? seen.AddDays(days)
+        RestLength(consecutiveCorrect) is { } rest && lastSeenAt is { } seen
+            ? seen + rest
             : null;
 
     public static bool IsResting(int consecutiveCorrect, DateTime? lastSeenAt) =>
@@ -66,7 +77,7 @@ public static class DrawWeight
         // A rest that has run its course leaves the item fully due. The point of resting is that
         // the item comes back to be tested, not that it quietly fades out of reach — suppressing
         // it further would stall the streak and it would never reach the next step.
-        if (RestDays(consecutiveCorrect) is not null) return 0;
+        if (RestLength(consecutiveCorrect) is not null) return 0;
 
         var daysSince = Math.Max(0, (DateTime.UtcNow - lastSeenAt.Value).TotalDays);
         return Math.Max(0, consecutiveCorrect - daysSince / StreakDecayDays);

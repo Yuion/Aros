@@ -69,8 +69,9 @@
           <h2>Mastery</h2>
           <p class="card-note">
             Counted per word <em>and</em> direction, so mastering 水 → water leaves water → 水 in
-            full rotation. Five in a row rests a pairing for a week, then two weeks, then four;
-            the next correct answer masters it and it leaves the pool.
+            full rotation. From the third correct answer a pairing rests before coming back —
+            12 hours, 36 hours, then a week, two and four; the eighth masters it and it leaves
+            the pool.
           </p>
           <RankedBars :rows="masteryRows" scale-to-max />
         </section>

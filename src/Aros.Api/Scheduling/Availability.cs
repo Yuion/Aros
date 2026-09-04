@@ -57,9 +57,12 @@ public record Availability(string Key, int Ready, int Resting, int Mastered, Dat
 
         if (span <= TimeSpan.Zero) return "now";
         if (span < TimeSpan.FromHours(1)) return "within the hour";
-        if (span < TimeSpan.FromDays(1)) return $"in {(int)span.TotalHours} hours";
+
+        // The two short rests are 12 and 36 hours, so hours stay useful past the day mark —
+        // rounding 36 hours to "in 2 days" would misstate it by half a day.
+        if (span < TimeSpan.FromHours(48)) return $"in {(int)Math.Ceiling(span.TotalHours)} hours";
 
         var days = (int)Math.Ceiling(span.TotalDays);
-        return days == 1 ? "tomorrow" : $"in {days} days";
+        return $"in {days} days";
     }
 }
