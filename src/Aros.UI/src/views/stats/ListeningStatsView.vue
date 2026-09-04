@@ -70,9 +70,10 @@
         <section class="card">
           <h2>Mastery</h2>
           <p class="card-note">
-            Sentences by how many times in a row you've got them right. From the third the
-            sentence rests before it can come back — 12 hours, 36 hours, then a week, two and
-            four; the eighth correct answer masters it and it leaves the pool.
+            Sentences by how many times in a row you've got them right. Every correct answer rests
+            the sentence before it can come back — 1, 3, 7 then 14 days, and the fifth masters it.
+            A sentence you have ever missed climbs a longer ladder: nothing, 1, 7, 14 then 28 days,
+            and it takes six to master. Past failures are not forgiven, only outlasted.
           </p>
           <RankedBars :rows="masteryRows" scale-to-max />
         </section>
@@ -97,8 +98,17 @@ import AccuracyChart from '@/components/stats/AccuracyChart.vue'
 import RankedBars from '@/components/stats/RankedBars.vue'
 import MasteryBars from '@/components/stats/MasteryBars.vue'
 
-// Ordinal blue ramp, validated against the white card surface
-const ORDINAL = ['#bfd7f5', '#9dc3ef', '#7aade9', '#5598e7', '#2a78d6', '#1f66b8', '#16457c']
+// A sequential ramp built to fit however many bars the ladder has — the bands are one
+// ordered measure, so lightness carries the order rather than a set of unrelated hues.
+const RAMP_FROM = [191, 215, 245]
+const RAMP_TO = [22, 69, 124]
+
+function shade(index, count) {
+  const t = count < 2 ? 1 : index / (count - 1)
+  const channel = (i) => Math.round(RAMP_FROM[i] + (RAMP_TO[i] - RAMP_FROM[i]) * t)
+
+  return `rgb(${channel(0)}, ${channel(1)}, ${channel(2)})`
+}
 
 const data = ref(null)
 const loading = ref(true)
@@ -146,12 +156,12 @@ const needsWorkRows = computed(() =>
 )
 
 const masteryRows = computed(() =>
-  (data.value?.mastery ?? []).map((step, i) => ({
+  (data.value?.mastery ?? []).map((step, i, all) => ({
     key: step.label,
     label: /^\d+$/.test(step.label) ? `${step.label} in a row` : step.label,
     ratio: step.count,
     value: step.count,
-    color: ORDINAL[i],
+    color: shade(i, all.length),
   })),
 )
 

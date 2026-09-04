@@ -13,30 +13,37 @@ public record Availability(string Key, int Ready, int Resting, int Mastered, Dat
     public bool RestingOut => Ready == 0 && Resting > 0;
 
     /// <summary>
+    /// One item's standing: the ladder it is on, plus where it sits on that ladder. A null
+    /// <paramref name="Progress"/> means never practised.
+    /// </summary>
+    public readonly record struct Standing(
+        RestSchedule Schedule, (int Streak, DateTime? LastSeenAt)? Progress);
+
+    /// <summary>
     /// Counts one pool. An item with no progress row has never been practised, so it is ready.
     /// <paramref name="NextDueAt"/> is the earliest rest to expire, which is the only useful thing
     /// to say when a direction has run dry: not "come back later" but when.
     /// </summary>
-    public static Availability From(string key, IEnumerable<(int Streak, DateTime? LastSeenAt)?> progress)
+    public static Availability From(string key, IEnumerable<Standing> items)
     {
         var ready = 0;
         var resting = 0;
         var mastered = 0;
         DateTime? next = null;
 
-        foreach (var item in progress)
+        foreach (var item in items)
         {
-            if (item is not { } p)
+            if (item.Progress is not { } p)
             {
                 ready++;
                 continue;
             }
 
-            if (DrawWeight.IsMastered(p.Streak))
+            if (item.Schedule.IsMastered(p.Streak))
             {
                 mastered++;
             }
-            else if (DrawWeight.RestingUntil(p.Streak, p.LastSeenAt) is { } until && until > DateTime.UtcNow)
+            else if (item.Schedule.RestingUntil(p.Streak, p.LastSeenAt) is { } until && until > DateTime.UtcNow)
             {
                 resting++;
                 if (next is null || until < next) next = until;

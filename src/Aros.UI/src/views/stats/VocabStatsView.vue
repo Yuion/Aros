@@ -106,8 +106,17 @@ const DIRECTION_LABELS = {
   EnglishToCharacters: 'English → 汉字',
 }
 
-// Ordinal blue ramp, validated against the white card surface
-const ORDINAL = ['#bfd7f5', '#9dc3ef', '#7aade9', '#5598e7', '#2a78d6', '#1f66b8', '#16457c']
+// A sequential ramp built to fit however many bars the ladder has — the bands are one
+// ordered measure, so lightness carries the order rather than a set of unrelated hues.
+const RAMP_FROM = [191, 215, 245]
+const RAMP_TO = [22, 69, 124]
+
+function shade(index, count) {
+  const t = count < 2 ? 1 : index / (count - 1)
+  const channel = (i) => Math.round(RAMP_FROM[i] + (RAMP_TO[i] - RAMP_FROM[i]) * t)
+
+  return `rgb(${channel(0)}, ${channel(1)}, ${channel(2)})`
+}
 
 const data = ref(null)
 const loading = ref(true)
@@ -124,12 +133,12 @@ const standingRows = computed(() =>
 )
 
 const masteryRows = computed(() =>
-  (data.value?.mastery ?? []).map((step, i) => ({
+  (data.value?.mastery ?? []).map((step, i, all) => ({
     key: step.label,
     label: /^\d+$/.test(step.label) ? `${step.label} in a row` : step.label,
     ratio: step.count,
     value: step.count,
-    color: ORDINAL[i],
+    color: shade(i, all.length),
   })),
 )
 

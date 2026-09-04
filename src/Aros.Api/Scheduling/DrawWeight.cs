@@ -1,16 +1,12 @@
 namespace Aros.Api.Scheduling;
 
 /// <summary>
-/// How often a practice item comes back. Shared by the listening game and the vocabulary
-/// trainer so the two can never drift apart.
-///
-/// Misses raise the weight; a correct streak lowers it; time erodes the streak, so nothing
+/// How often a practice item comes back, once the rest schedule has decided that it comes back at
+/// all. Misses raise the weight; a correct streak lowers it; time erodes the streak, so nothing
 /// stays suppressed merely because it was known once. Score and recency end up as one number.
 ///
-/// On top of that sits an expanding rest schedule: from the third correct answer in a row an item
-/// leaves the pool for a while, and each further correct answer lengthens the wait — hours at
-/// first, then weeks — until it is finally mastered and leaves for good. The weight decides
-/// *how often* something comes up; the rest decides *whether* it comes up at all.
+/// Shared by the listening game and the vocabulary trainer. The two now climb different rest
+/// ladders (see <see cref="RestSchedule"/>) but they are weighted the same way.
 /// </summary>
 public static class DrawWeight
 {
@@ -23,53 +19,13 @@ public static class DrawWeight
     /// <summary>Never practiced — fully due.</summary>
     public const double Unseen = 1.0;
 
-    /// <summary>Correct answers in a row that first send an item to rest.</summary>
-    public const int RestStreak = 3;
-
-    /// <summary>
-    /// How long each rest lasts, for streaks <see cref="RestStreak"/> upwards. The first two are
-    /// hours rather than days: three right in a row means it is sticking, not that it is learned,
-    /// so the item is held back for the rest of the session rather than the rest of the week.
-    /// </summary>
-    private static readonly TimeSpan[] RestLengths =
-    [
-        TimeSpan.FromHours(12),
-        TimeSpan.FromHours(36),
-        TimeSpan.FromDays(7),
-        TimeSpan.FromDays(14),
-        TimeSpan.FromDays(28),
-    ];
-
-    /// <summary>Streak at which an item is done: it leaves the pool and is not asked again.</summary>
-    public static readonly int MasteryStreak = RestStreak + RestLengths.Length;   // the 8th correct answer
-
-    public static double For(int wrongCount, int consecutiveCorrect, DateTime? lastSeenAt)
+    public static double For(RestSchedule schedule, int wrongCount, int consecutiveCorrect, DateTime? lastSeenAt)
     {
-        var weight = (1 + wrongCount) * Math.Pow(0.5, EffectiveStreak(consecutiveCorrect, lastSeenAt));
+        var weight = (1 + wrongCount) * Math.Pow(0.5, EffectiveStreak(schedule, consecutiveCorrect, lastSeenAt));
         return Math.Max(Floor, weight);
     }
 
-    public static bool IsMastered(int consecutiveCorrect) => consecutiveCorrect >= MasteryStreak;
-
-    /// <summary>How long this streak rests, or null if it is too short to rest or already mastered.</summary>
-    public static TimeSpan? RestLength(int consecutiveCorrect) =>
-        consecutiveCorrect < RestStreak || IsMastered(consecutiveCorrect)
-            ? null
-            : RestLengths[consecutiveCorrect - RestStreak];
-
-    public static DateTime? RestingUntil(int consecutiveCorrect, DateTime? lastSeenAt) =>
-        RestLength(consecutiveCorrect) is { } rest && lastSeenAt is { } seen
-            ? seen + rest
-            : null;
-
-    public static bool IsResting(int consecutiveCorrect, DateTime? lastSeenAt) =>
-        RestingUntil(consecutiveCorrect, lastSeenAt) is { } until && until > DateTime.UtcNow;
-
-    /// <summary>Can be asked right now: not mastered, and not in the middle of a rest.</summary>
-    public static bool IsAvailable(int consecutiveCorrect, DateTime? lastSeenAt) =>
-        !IsMastered(consecutiveCorrect) && !IsResting(consecutiveCorrect, lastSeenAt);
-
-    private static double EffectiveStreak(int consecutiveCorrect, DateTime? lastSeenAt)
+    private static double EffectiveStreak(RestSchedule schedule, int consecutiveCorrect, DateTime? lastSeenAt)
     {
         if (consecutiveCorrect <= 0) return 0;
         if (lastSeenAt is null) return 0;          // no date to decay from — treat as due
@@ -77,7 +33,7 @@ public static class DrawWeight
         // A rest that has run its course leaves the item fully due. The point of resting is that
         // the item comes back to be tested, not that it quietly fades out of reach — suppressing
         // it further would stall the streak and it would never reach the next step.
-        if (RestLength(consecutiveCorrect) is not null) return 0;
+        if (schedule.RestLength(consecutiveCorrect) is not null) return 0;
 
         var daysSince = Math.Max(0, (DateTime.UtcNow - lastSeenAt.Value).TotalDays);
         return Math.Max(0, consecutiveCorrect - daysSince / StreakDecayDays);

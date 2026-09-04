@@ -149,8 +149,9 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
         return tag is { Length: > 0 } ? words.Where(w => w.Tags.Contains(tag)).ToList() : words;
     }
 
-    private static (int Streak, DateTime? LastSeenAt)? Standing(VocabWord word, VocabDirection direction) =>
-        Progress(word, direction) is { } p ? (p.ConsecutiveCorrect, p.LastSeenAt) : null;
+    public static Availability.Standing Standing(VocabWord word, VocabDirection direction) =>
+        new(RestSchedule.Vocabulary,
+            Progress(word, direction) is { } p ? (p.ConsecutiveCorrect, p.LastSeenAt) : null);
 
     private static Availability Tally(Dictionary<VocabDirection, List<VocabWord>> pools) =>
         Availability.From(
@@ -393,15 +394,15 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
     /// </summary>
     private static List<VocabWord> Askable(List<VocabWord> words, VocabDirection direction) =>
         words.Where(w => Progress(w, direction) is not { } p
-                         || DrawWeight.IsAvailable(p.ConsecutiveCorrect, p.LastSeenAt))
+                         || RestSchedule.Vocabulary.IsAvailable(p.ConsecutiveCorrect, p.LastSeenAt))
              .ToList();
 
-    private static VocabProgress? Progress(VocabWord word, VocabDirection direction) =>
+    internal static VocabProgress? Progress(VocabWord word, VocabDirection direction) =>
         word.Progress.FirstOrDefault(p => p.Direction == direction);
 
     private static double Weight(VocabWord word, VocabDirection direction) =>
         Progress(word, direction) is { } progress
-            ? DrawWeight.For(progress.WrongCount, progress.ConsecutiveCorrect, progress.LastSeenAt)
+            ? DrawWeight.For(RestSchedule.Vocabulary, progress.WrongCount, progress.ConsecutiveCorrect, progress.LastSeenAt)
             : DrawWeight.Unseen;
 
     private QuestionState Lookup(Guid token) =>

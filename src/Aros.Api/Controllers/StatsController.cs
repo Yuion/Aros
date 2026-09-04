@@ -14,8 +14,7 @@ public class StatsController(AppDbContext db, ListeningService listening, VocabS
 {
     private const int TrendDays = 30;
 
-    /// <summary>The streaks shown one bar each; everything above them is resting or mastered.</summary>
-    private static readonly int[] ActiveStreaks = [.. Enumerable.Range(0, DrawWeight.RestStreak)];
+
 
     [HttpGet("listening")]
     public async Task<IActionResult> Listening(CancellationToken ct)
@@ -43,8 +42,8 @@ public class StatsController(AppDbContext db, ListeningService listening, VocabS
             librarySize = clips.Count,
             practiced = played.Count,
             neverPracticed = clips.Count - played.Count,
-            mastered = rows.Count(r => DrawWeight.IsMastered(r.Stat.ConsecutiveCorrect)),
-            resting = rows.Count(r => DrawWeight.IsResting(r.Stat.ConsecutiveCorrect, r.Stat.LastSeenAt)),
+            mastered = rows.Count(r => Ladder(r.Stat).IsMastered(r.Stat.ConsecutiveCorrect)),
+            resting = rows.Count(r => Ladder(r.Stat).IsResting(r.Stat.ConsecutiveCorrect, r.Stat.LastSeenAt)),
             withPinyin = clips.Count(c => c.Pinyin.Length > 0),
             withEnglish = clips.Count(c => c.English.Length > 0),
             lastPlayed = rows.Count == 0 ? null : rows.Max(r => r.Stat.LastSeenAt),
@@ -87,7 +86,7 @@ public class StatsController(AppDbContext db, ListeningService listening, VocabS
             .Take(10)
             .ToList();
 
-        var mastery = MasteryBands(rows.Select(r => r.Stat.ConsecutiveCorrect));
+        var mastery = MasteryBands(rows.Select(r => (r.Stat.ConsecutiveCorrect, Ladder(r.Stat))));
 
         // Hearing a sentence and writing out what you heard are different skills
         var byMode = Enum.GetValues<ListeningMode>()
@@ -155,8 +154,8 @@ public class StatsController(AppDbContext db, ListeningService listening, VocabS
             practiced = words.Count(w => w.Progress.Count > 0),
             neverPracticed = words.Count(w => w.Progress.Count == 0 && !w.NeedsReview),
             needsReview = words.Count(w => w.NeedsReview),
-            mastered = rows.Count(r => DrawWeight.IsMastered(r.Progress.ConsecutiveCorrect)),
-            resting = rows.Count(r => DrawWeight.IsResting(r.Progress.ConsecutiveCorrect, r.Progress.LastSeenAt)),
+            mastered = rows.Count(r => RestSchedule.Vocabulary.IsMastered(r.Progress.ConsecutiveCorrect)),
+            resting = rows.Count(r => RestSchedule.Vocabulary.IsResting(r.Progress.ConsecutiveCorrect, r.Progress.LastSeenAt)),
             lastPlayed = rows.Count == 0 ? null : rows.Max(r => r.Progress.LastSeenAt),
         };
 
@@ -228,7 +227,8 @@ public class StatsController(AppDbContext db, ListeningService listening, VocabS
             .Select(a => (DateTime?)a.AnsweredAt)
             .FirstOrDefaultAsync(ct);
 
-        var mastery = MasteryBands(rows.Select(r => r.Progress.ConsecutiveCorrect));
+        var mastery = MasteryBands(
+            rows.Select(r => (r.Progress.ConsecutiveCorrect, RestSchedule.Vocabulary)));
         var standing = Standing(await vocab.AvailabilityAsync(null, ct));
 
         return Ok(new { totals, daily, byDirection, standing, needsWork, mastery, untouched, historyStart, trendDays = TrendDays });
@@ -252,34 +252,36 @@ public class StatsController(AppDbContext db, ListeningService listening, VocabS
         })
     ];
 
-    /// <summary>
-    /// How far along the rest schedule everything is: one bar per streak up to the first rest,
-    /// then the resting band, then what is done with. Counting the resting band by streak rather
-    /// than by clock means an item that has come back but not yet been re-tested still shows here,
-    /// which is where it belongs — it has not lost the streak, it just has not used it yet.
-    /// </summary>
-    private static List<object> MasteryBands(IEnumerable<int> streaks)
-    {
-        var all = streaks.ToList();
+    private static RestSchedule Ladder(TtsClipStat stat) => RestSchedule.ForListening(stat.WrongCount);
 
-        var bands = ActiveStreaks
+    /// <summary>
+    /// How far along everything is, one bar per streak and a last bar for what is finished with.
+    /// Bars are counted by streak rather than by clock, so an item whose rest has expired but which
+    /// has not been re-tested still shows at the streak it holds — it has not lost it, it just has
+    /// not used it yet.
+    ///
+    /// The listening ladder is two ladders (a sentence missed once needs one more correct answer
+    /// than one never missed), so the number of bars follows whichever is longest in the data.
+    /// </summary>
+    private static List<object> MasteryBands(IEnumerable<(int Streak, RestSchedule Schedule)> items)
+    {
+        var all = items.ToList();
+        if (all.Count == 0) return [];
+
+        var lastBar = all.Max(i => i.Schedule.LastActiveStreak);
+
+        var bands = Enumerable.Range(0, lastBar + 1)
             .Select(streak => (object)new
             {
                 label = streak.ToString(),
-                count = all.Count(s => s == streak),
+                count = all.Count(i => i.Streak == streak && !i.Schedule.IsMastered(i.Streak)),
             })
             .ToList();
 
         bands.Add(new
         {
-            label = $"Resting ({DrawWeight.RestStreak}–{DrawWeight.MasteryStreak - 1})",
-            count = all.Count(s => s >= DrawWeight.RestStreak && !DrawWeight.IsMastered(s)),
-        });
-
-        bands.Add(new
-        {
             label = "Mastered",
-            count = all.Count(DrawWeight.IsMastered),
+            count = all.Count(i => i.Schedule.IsMastered(i.Streak)),
         });
 
         return bands;

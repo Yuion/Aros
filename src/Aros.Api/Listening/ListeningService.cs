@@ -263,8 +263,11 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     /// </summary>
     private static List<TtsClip> Askable(List<TtsClip> clips, ListeningMode mode) =>
         clips.Where(c => Stat(c, mode) is not { } s
-                         || DrawWeight.IsAvailable(s.ConsecutiveCorrect, s.LastSeenAt))
+                         || Schedule(s).IsAvailable(s.ConsecutiveCorrect, s.LastSeenAt))
              .ToList();
+
+    /// <summary>A sentence missed even once climbs the longer ladder.</summary>
+    private static RestSchedule Schedule(TtsClipStat stat) => RestSchedule.ForListening(stat.WrongCount);
 
     /// <summary>
     /// What each mode has left to ask. Drives the start button, so a mode whose sentences are all
@@ -292,11 +295,14 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     };
 
     private static Availability Tally(List<TtsClip> clips, ListeningMode mode) =>
-        Availability.From(
-            mode.ToString(),
-            clips.Select(c => Stat(c, mode) is { } s ? ((int, DateTime?)?)(s.ConsecutiveCorrect, s.LastSeenAt) : null));
+        Availability.From(mode.ToString(), clips.Select(c => Standing(c, mode)));
 
-    private static TtsClipStat? Stat(TtsClip clip, ListeningMode mode) =>
+    public static Availability.Standing Standing(TtsClip clip, ListeningMode mode) =>
+        Stat(clip, mode) is { } stat
+            ? new Availability.Standing(Schedule(stat), (stat.ConsecutiveCorrect, stat.LastSeenAt))
+            : new Availability.Standing(RestSchedule.ListeningClean, null);
+
+    internal static TtsClipStat? Stat(TtsClip clip, ListeningMode mode) =>
         clip.Stats.FirstOrDefault(s => s.Mode == mode);
 
     private static List<TtsClip> PickWeighted(List<TtsClip> clips, ListeningMode mode, int count) =>
@@ -304,7 +310,7 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
 
     private static double Weight(TtsClip clip, ListeningMode mode) =>
         Stat(clip, mode) is { } stat
-            ? DrawWeight.For(stat.WrongCount, stat.ConsecutiveCorrect, stat.LastSeenAt)
+            ? DrawWeight.For(Schedule(stat), stat.WrongCount, stat.ConsecutiveCorrect, stat.LastSeenAt)
             : DrawWeight.Unseen;
 
     private QuestionState Lookup(Guid token) =>
