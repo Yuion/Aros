@@ -15,11 +15,12 @@ public class ListeningController(ListeningService listening, TtsService tts) : C
     public async Task<IActionResult> Quiz(
         [FromQuery] int questions = ListeningService.DefaultQuestionCount,
         [FromQuery] ListeningMode mode = ListeningMode.Characters,
+        [FromQuery] bool sweep = true,
         CancellationToken ct = default)
     {
         try
         {
-            var quiz = await listening.BuildQuizAsync(questions, mode, ct);
+            var quiz = await listening.BuildQuizAsync(questions, mode, sweep, ct);
 
             return Ok(new
             {

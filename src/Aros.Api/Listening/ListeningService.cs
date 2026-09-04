@@ -40,7 +40,13 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         public bool Answered { get; set; }
     }
 
-    public async Task<Quiz> BuildQuizAsync(int questionCount, ListeningMode mode, CancellationToken ct)
+    /// <summary>
+    /// A round of <paramref name="questionCount"/> clips, or — with <paramref name="sweep"/> —
+    /// every sentence the mode can ask about that is not resting, once each. The order is drawn by
+    /// weight either way, so the ones most due come first; a sweep simply does not stop early.
+    /// </summary>
+    public async Task<Quiz> BuildQuizAsync(
+        int questionCount, ListeningMode mode, bool sweep, CancellationToken ct)
     {
         var clips = await db.TtsClips
             .Include(c => c.Stats)
@@ -68,7 +74,7 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
                     : "Every sentence you can be asked here is mastered. Add new ones in Chinese TTS.");
         }
 
-        var wanted = Math.Clamp(questionCount, 1, askable.Count);
+        var wanted = sweep ? askable.Count : Math.Clamp(questionCount, 1, askable.Count);
         var answers = PickWeighted(askable, mode, wanted);
 
         var questions = answers

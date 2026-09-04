@@ -1,12 +1,26 @@
 <template>
   <div class="landing">
     <h1>Chinese Listening</h1>
-    <p class="subtitle">Ten clips. {{ MODES.find((m) => m.id === mode).blurb }}</p>
+    <p class="subtitle">{{ MODES.find((m) => m.id === mode).blurb }}</p>
 
     <button class="play-button" :disabled="!ready" @click="start">
       <span class="play-icon">▶</span>
       <span class="play-label">Play</span>
+      <span class="play-sub">{{ roundLength }}</span>
     </button>
+
+    <!-- Everything, or a sample of it -->
+    <div class="round-modes">
+      <button
+        v-for="option in ROUND_MODES"
+        :key="option.id"
+        class="round-mode"
+        :class="{ active: sweep === option.sweep }"
+        @click="sweep = option.sweep"
+      >
+        {{ option.label }}
+      </button>
+    </div>
 
     <!-- One mode per round: the writing modes only reach sentences that carry that reading -->
     <ul class="modes">
@@ -110,6 +124,12 @@ const newChars = ref('')
 const newReading = ref('')
 const groupError = ref('')
 
+const ROUND_MODES = [
+  { id: 'sweep', label: 'Everything', sweep: true },
+  { id: 'sample', label: 'Short round', sweep: false },
+]
+
+const sweep = ref(true)
 const availability = ref([])
 
 // What each mode can actually draw on now — rests and mastery already taken out
@@ -131,6 +151,14 @@ function readyFor(id) {
 
 const selected = computed(() => row(mode.value))
 const ready = computed(() => selected.value.ready > 0)
+
+// What Play is about to hand you, so the size of a sweep is never a surprise
+const roundLength = computed(() => {
+  const open = selected.value.ready
+  if (!open) return 'nothing ready'
+
+  return `${sweep.value ? open : Math.min(10, open)} clips`
+})
 
 async function loadGroups() {
   try {
@@ -182,11 +210,41 @@ onMounted(async () => {
 })
 
 function start() {
-  router.push({ path: '/chinese-listening/play', query: { mode: mode.value } })
+  const query = { mode: mode.value }
+  if (!sweep.value) query.sweep = 'false'
+
+  router.push({ path: '/chinese-listening/play', query })
 }
 </script>
 
 <style scoped>
+.round-modes {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.round-mode {
+  padding: 0.4rem 0.8rem;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #6b7280;
+  background: white;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.round-mode:hover {
+  border-color: #cba6f7;
+}
+
+.round-mode.active {
+  border-color: #6d5bd0;
+  color: #6d5bd0;
+}
+
 .modes {
   list-style: none;
   display: flex;
@@ -291,6 +349,11 @@ h1 {
 .play-icon {
   font-size: 3rem;
   line-height: 1;
+}
+
+.play-sub {
+  font-size: 0.7rem;
+  opacity: 0.75;
 }
 
 .play-label {

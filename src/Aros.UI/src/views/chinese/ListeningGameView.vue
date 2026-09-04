@@ -132,8 +132,11 @@ async function loadQuiz() {
   correctCount.value = 0
 
   try {
-    const wanted = route.query.mode ?? 'Characters'
-    const quiz = await api.post(`/listening/quiz?questions=10&mode=${encodeURIComponent(wanted)}`)
+    // Length is decided server-side: every clip not resting, or ten of them
+    const params = new URLSearchParams({ questions: '10', mode: route.query.mode ?? 'Characters' })
+    if (route.query.sweep === 'false') params.set('sweep', 'false')
+
+    const quiz = await api.post(`/listening/quiz?${params}`)
     mode.value = quiz.mode
     typed.value = quiz.typed
     questions.value = quiz.questions
