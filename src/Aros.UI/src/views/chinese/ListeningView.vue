@@ -13,27 +13,48 @@
       <li v-for="option in MODES" :key="option.id">
         <button
           class="mode"
-          :class="{ active: mode === option.id, empty: !available(option.id) }"
+          :class="{
+            active: mode === option.id,
+            resting: row(option.id).restingOut,
+            empty: !readyFor(option.id) && !row(option.id).restingOut,
+          }"
           @click="mode = option.id"
         >
           <span class="mode-name">{{ option.label }}</span>
-          <span class="mode-count">{{ available(option.id) }}</span>
+          <span class="mode-count">{{ readyFor(option.id) }} ready</span>
         </button>
       </li>
     </ul>
 
     <p v-if="loading" class="note">Checking your library…</p>
-    <p v-else-if="!ready" class="note warn">
-      <template v-if="mode === 'Characters'">
+
+    <!-- Nothing to draw, and why -->
+    <p v-else-if="!ready" class="note" :class="selected.resting ? 'resting' : 'warn'">
+      <template v-if="selected.resting">
+        Every sentence in this mode is resting — {{ selected.resting }} waiting, next due
+        {{ selected.nextDue }}. Try another mode, or come back then.
+      </template>
+      <template v-else-if="selected.mastered && !selected.ready">
+        Every sentence in this mode is mastered.
+        <RouterLink to="/chinese-tts">Add more in Chinese TTS →</RouterLink>
+      </template>
+      <template v-else-if="mode === 'Characters'">
         You need at least 3 sentences to play. Your library has {{ clipCount }}.
+        <RouterLink to="/chinese-tts">Add some in Chinese TTS →</RouterLink>
       </template>
       <template v-else>
         No sentence carries its {{ mode === 'Pinyin' ? 'pinyin' : 'English' }} yet — paste a batch
         with pinyin and English to unlock this mode.
+        <RouterLink to="/chinese-tts">Add some in Chinese TTS →</RouterLink>
       </template>
-      <RouterLink to="/chinese-tts">Add some in Chinese TTS →</RouterLink>
     </p>
-    <p v-else class="note">{{ available(mode) }} sentences available in this mode.</p>
+
+    <p v-else class="note">
+      {{ selected.ready }} of {{ selected.total }} sentences ready in this mode<template
+        v-if="selected.resting"
+      >, {{ selected.resting }} resting</template
+      >.
+    </p>
 
     <section class="homophones">
       <button class="disclosure" @click="showGroups = !showGroups">
@@ -80,8 +101,6 @@ const MODES = [
 
 const router = useRouter()
 const clipCount = ref(0)
-const withPinyin = ref(0)
-const withEnglish = ref(0)
 const mode = ref('Characters')
 const loading = ref(true)
 
@@ -91,16 +110,27 @@ const newChars = ref('')
 const newReading = ref('')
 const groupError = ref('')
 
-// Picking needs three sentences to build a question from; writing needs only the reading itself
-function available(id) {
-  if (id === 'Pinyin') return withPinyin.value
-  if (id === 'English') return withEnglish.value
-  return clipCount.value
+const availability = ref([])
+
+// What each mode can actually draw on now — rests and mastery already taken out
+function row(id) {
+  return (
+    availability.value.find((a) => a.mode === id) ?? {
+      ready: 0,
+      resting: 0,
+      mastered: 0,
+      total: 0,
+      nextDue: '',
+    }
+  )
 }
 
-const ready = computed(() =>
-  mode.value === 'Characters' ? clipCount.value >= 3 : available(mode.value) > 0,
-)
+function readyFor(id) {
+  return row(id).ready
+}
+
+const selected = computed(() => row(mode.value))
+const ready = computed(() => selected.value.ready > 0)
 
 async function loadGroups() {
   try {
@@ -136,10 +166,12 @@ async function removeGroup(group) {
 
 onMounted(async () => {
   try {
-    const clips = await api.get('/tts/clips')
+    const [clips, modes] = await Promise.all([
+      api.get('/tts/clips'),
+      api.get('/listening/availability'),
+    ])
     clipCount.value = clips.length
-    withPinyin.value = clips.filter((c) => c.pinyin).length
-    withEnglish.value = clips.filter((c) => c.english).length
+    availability.value = modes
   } catch {
     clipCount.value = 0
   } finally {
@@ -200,6 +232,11 @@ function start() {
 
 .mode.empty .mode-count {
   color: #b91c1c;
+}
+
+/* Out of sentences only until a rest expires — not the same as having none */
+.mode.resting .mode-count {
+  color: #2563eb;
 }
 
 .landing {
@@ -270,6 +307,11 @@ h1 {
 
 .note.warn {
   color: #92400e;
+}
+
+/* Resting is a scheduled pause, not a problem — say it calmly */
+.note.resting {
+  color: #1e40af;
 }
 
 .note a {

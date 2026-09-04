@@ -50,12 +50,7 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         // Only the picking mode needs to know what sounds like what
         var audible = mode == ListeningMode.Characters ? await AudibleFormsAsync(clips, ct) : null;
 
-        var eligible = mode switch
-        {
-            ListeningMode.Characters => Pickable(clips, audible!),
-            ListeningMode.Pinyin => clips.Where(c => c.Pinyin.Length > 0).ToList(),
-            _ => clips.Where(c => c.English.Length > 0).ToList(),
-        };
+        var eligible = Eligible(clips, mode, audible!);
 
         if (eligible.Count == 0) throw new ListeningException(NothingToAsk(mode, clips));
 
@@ -64,7 +59,14 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         var askable = Askable(eligible, mode);
 
         if (askable.Count == 0)
-            throw new ListeningException("Every sentence you can be asked here is mastered. Add new ones in Chinese TTS.");
+        {
+            var tally = Tally(eligible, mode);
+
+            throw new ListeningException(
+                tally.NextDueAt is { } due
+                    ? $"Every sentence here is resting. The next is due {Availability.Due(due)}."
+                    : "Every sentence you can be asked here is mastered. Add new ones in Chinese TTS.");
+        }
 
         var wanted = Math.Clamp(questionCount, 1, askable.Count);
         var answers = PickWeighted(askable, mode, wanted);
@@ -249,17 +251,44 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     }
 
     /// <summary>
-    /// Drops sentences mastered in this mode for good and resting ones until their rest is up. If
-    /// every remaining sentence is resting, the rests are ignored rather than refusing to play —
-    /// practising early beats not practising.
+    /// Drops sentences mastered in this mode for good and resting ones until their rest is up. A
+    /// mode with nothing ready simply cannot be played: the start button knows this in advance and
+    /// says when the next sentence is due, so there is no reason to cut a rest short behind your back.
     /// </summary>
-    private static List<TtsClip> Askable(List<TtsClip> clips, ListeningMode mode)
-    {
-        var live = clips.Where(c => Stat(c, mode) is not { } s || !DrawWeight.IsMastered(s.ConsecutiveCorrect)).ToList();
-        var ready = live.Where(c => Stat(c, mode) is not { } s || !DrawWeight.IsResting(s.ConsecutiveCorrect, s.LastSeenAt)).ToList();
+    private static List<TtsClip> Askable(List<TtsClip> clips, ListeningMode mode) =>
+        clips.Where(c => Stat(c, mode) is not { } s
+                         || DrawWeight.IsAvailable(s.ConsecutiveCorrect, s.LastSeenAt))
+             .ToList();
 
-        return ready.Count > 0 ? ready : live;
+    /// <summary>
+    /// What each mode has left to ask. Drives the start button, so a mode whose sentences are all
+    /// resting can say so up front rather than failing when the round is built.
+    /// </summary>
+    public async Task<IReadOnlyList<Availability>> AvailabilityAsync(CancellationToken ct)
+    {
+        var clips = await db.TtsClips.Include(c => c.Stats).AsNoTracking().ToListAsync(ct);
+        var audible = await AudibleFormsAsync(clips, ct);
+
+        return
+        [
+            .. Enum.GetValues<ListeningMode>()
+                .Select(mode => Tally(Eligible(clips, mode, audible), mode))
+        ];
     }
+
+    /// <summary>Sentences a mode could ask about at all, before rests and mastery are considered.</summary>
+    private static List<TtsClip> Eligible(
+        List<TtsClip> clips, ListeningMode mode, Dictionary<int, string> audible) => mode switch
+    {
+        ListeningMode.Characters => Pickable(clips, audible),
+        ListeningMode.Pinyin => clips.Where(c => c.Pinyin.Length > 0).ToList(),
+        _ => clips.Where(c => c.English.Length > 0).ToList(),
+    };
+
+    private static Availability Tally(List<TtsClip> clips, ListeningMode mode) =>
+        Availability.From(
+            mode.ToString(),
+            clips.Select(c => Stat(c, mode) is { } s ? ((int, DateTime?)?)(s.ConsecutiveCorrect, s.LastSeenAt) : null));
 
     private static TtsClipStat? Stat(TtsClip clip, ListeningMode mode) =>
         clip.Stats.FirstOrDefault(s => s.Mode == mode);

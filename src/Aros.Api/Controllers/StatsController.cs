@@ -1,6 +1,8 @@
 using Aros.Api.Data;
 using Aros.Api.Data.Entities;
+using Aros.Api.Listening;
 using Aros.Api.Scheduling;
+using Aros.Api.Vocab;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,7 +10,7 @@ namespace Aros.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class StatsController(AppDbContext db) : ControllerBase
+public class StatsController(AppDbContext db, ListeningService listening, VocabService vocab) : ControllerBase
 {
     private const int TrendDays = 30;
 
@@ -124,7 +126,9 @@ public class StatsController(AppDbContext db) : ControllerBase
             .Select(a => (DateTime?)a.AnsweredAt)
             .FirstOrDefaultAsync(ct);
 
-        return Ok(new { totals, daily, byMode, needsWork, mastery, untouched, historyStart, trendDays = TrendDays });
+        var standing = Standing(await listening.AvailabilityAsync(ct));
+
+        return Ok(new { totals, daily, byMode, standing, needsWork, mastery, untouched, historyStart, trendDays = TrendDays });
     }
 
     [HttpGet("vocab")]
@@ -225,9 +229,28 @@ public class StatsController(AppDbContext db) : ControllerBase
             .FirstOrDefaultAsync(ct);
 
         var mastery = MasteryBands(rows.Select(r => r.Progress.ConsecutiveCorrect));
+        var standing = Standing(await vocab.AvailabilityAsync(null, ct));
 
-        return Ok(new { totals, daily, byDirection, needsWork, mastery, untouched, historyStart, trendDays = TrendDays });
+        return Ok(new { totals, daily, byDirection, standing, needsWork, mastery, untouched, historyStart, trendDays = TrendDays });
     }
+
+    /// <summary>
+    /// Where each direction or mode stands right now: what a round could draw on, what is waiting
+    /// out a rest, and what is finished with. Same numbers the start button uses, so the page and
+    /// the button can never disagree.
+    /// </summary>
+    private static List<object> Standing(IEnumerable<Availability> areas) =>
+    [
+        .. areas.Select(a => (object)new
+        {
+            key = a.Key,
+            open = a.Ready,
+            resting = a.Resting,
+            mastered = a.Mastered,
+            total = a.Total,
+            nextDue = a.NextDueAt is { } due ? Availability.Due(due) : null,
+        })
+    ];
 
     /// <summary>
     /// How far along the rest schedule everything is: one bar per streak up to the first rest,

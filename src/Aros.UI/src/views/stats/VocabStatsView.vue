@@ -56,6 +56,16 @@
         </section>
 
         <section class="card">
+          <h2>Where each direction stands</h2>
+          <p class="card-note">
+            Open / resting / mastered, per direction. Open is what a round can draw on now;
+            resting comes back on its own; mastered is done with. These are the same numbers the
+            Start button uses, so a direction showing no open words cannot be started.
+          </p>
+          <MasteryBars :rows="standingRows" />
+        </section>
+
+        <section class="card">
           <h2>Mastery</h2>
           <p class="card-note">
             Counted per word <em>and</em> direction, so mastering 水 → water leaves water → 水 in
@@ -84,6 +94,7 @@ import { api } from '@/services/api'
 import StatTile from '@/components/stats/StatTile.vue'
 import AccuracyChart from '@/components/stats/AccuracyChart.vue'
 import RankedBars from '@/components/stats/RankedBars.vue'
+import MasteryBars from '@/components/stats/MasteryBars.vue'
 
 const DIRECTION_LABELS = {
   CharactersToPinyin: '汉字 → pinyin',
@@ -100,6 +111,16 @@ const ORDINAL = ['#bfd7f5', '#9dc3ef', '#7aade9', '#5598e7', '#2a78d6', '#1f66b8
 const data = ref(null)
 const loading = ref(true)
 const error = ref('')
+
+const standingRows = computed(() =>
+  (data.value?.standing ?? []).map((row) => ({
+    key: row.key,
+    label: DIRECTION_LABELS[row.key] ?? row.key,
+    open: row.open,
+    resting: row.resting,
+    mastered: row.mastered,
+  })),
+)
 
 const masteryRows = computed(() =>
   (data.value?.mastery ?? []).map((step, i) => ({

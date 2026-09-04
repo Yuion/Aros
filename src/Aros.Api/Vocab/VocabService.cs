@@ -56,15 +56,7 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
     public async Task<VocabSession> BuildSessionAsync(
         int perDirection, VocabDirection? only, string? tag, CancellationToken ct)
     {
-        var words = await db.VocabWords
-            .Include(w => w.Progress)
-            .Where(w => !w.NeedsReview)          // a guessed reading must never be drilled in
-            .AsNoTracking()
-            .ToListAsync(ct);
-
-        if (tag is { Length: > 0 })
-            words = words.Where(w => w.Tags.Contains(tag)).ToList();
-
+        var words = await TestableAsync(tag, ct);
         var unique = PromptCounts(words);
 
         // Which words can be asked in which direction. Rests and mastery are judged per
@@ -79,12 +71,22 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
         var candidates = testable.ToDictionary(pair => pair.Key, pair => Askable(pair.Value, pair.Key));
 
         if (candidates.Values.All(list => list.Count == 0))
+        {
+            if (words.Count == 0)
+                throw new VocabException(
+                    "No vocabulary yet. Add sentences in Chinese TTS, or add a word directly — either way it waits in review first.");
+
+            if (testable.Values.All(list => list.Count == 0))
+                throw new VocabException(
+                    "No words are testable in that direction yet — they may still be waiting for review.");
+
+            // Nothing left to draw. Resting is temporary and worth dating; mastered is not.
+            var tally = Tally(testable);
             throw new VocabException(
-                words.Count == 0
-                    ? "No vocabulary yet. Add sentences in Chinese TTS, or add a word directly — either way it waits in review first."
-                    : testable.Values.Any(list => list.Count > 0)
-                        ? "Everything testable there is mastered. Add more vocabulary."
-                        : "No words are testable in that direction yet — they may still be waiting for review.");
+                tally.NextDueAt is { } due
+                    ? $"Everything here is resting. The next word is due {Availability.Due(due)}."
+                    : "Everything testable here is mastered. Add more vocabulary.");
+        }
 
         var perBlock = only is null
             ? Math.Max(1, perDirection)
@@ -110,6 +112,44 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
 
         return new VocabSession(questions);
     }
+
+    /// <summary>
+    /// What each direction has left to ask. The start button is driven by this, so a direction
+    /// whose words are all resting can say so instead of failing when the round is built.
+    /// </summary>
+    public async Task<IReadOnlyList<Availability>> AvailabilityAsync(string? tag, CancellationToken ct)
+    {
+        var words = await TestableAsync(tag, ct);
+        var unique = PromptCounts(words);
+
+        return
+        [
+            .. Enum.GetValues<VocabDirection>()
+                .Select(direction => Availability.From(
+                    direction.ToString(),
+                    words.Where(w => Directions(w, unique).Contains(direction))
+                         .Select(w => Standing(w, direction))))
+        ];
+    }
+
+    private async Task<List<VocabWord>> TestableAsync(string? tag, CancellationToken ct)
+    {
+        var words = await db.VocabWords
+            .Include(w => w.Progress)
+            .Where(w => !w.NeedsReview)          // a guessed reading must never be drilled in
+            .AsNoTracking()
+            .ToListAsync(ct);
+
+        return tag is { Length: > 0 } ? words.Where(w => w.Tags.Contains(tag)).ToList() : words;
+    }
+
+    private static (int Streak, DateTime? LastSeenAt)? Standing(VocabWord word, VocabDirection direction) =>
+        Progress(word, direction) is { } p ? (p.ConsecutiveCorrect, p.LastSeenAt) : null;
+
+    private static Availability Tally(Dictionary<VocabDirection, List<VocabWord>> pools) =>
+        Availability.From(
+            "selected",
+            pools.SelectMany(pair => pair.Value.Select(word => Standing(word, pair.Key))));
 
     public async Task<VocabAnswerResult> AnswerAsync(
         Guid token, string? text, int? selectedWordId, CancellationToken ct)
@@ -342,16 +382,13 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
 
     /// <summary>
     /// Drops words mastered in this direction for good, and resting ones until their rest is up.
-    /// If a direction has nothing but resting words left, the rests are ignored rather than
-    /// dropping the direction from the round — practising early beats not practising.
+    /// A direction with nothing ready is simply skipped: the start button knows this in advance
+    /// and says so, so there is no reason to cut a rest short behind your back.
     /// </summary>
-    private static List<VocabWord> Askable(List<VocabWord> words, VocabDirection direction)
-    {
-        var live = words.Where(w => Progress(w, direction) is not { } p || !DrawWeight.IsMastered(p.ConsecutiveCorrect)).ToList();
-        var ready = live.Where(w => Progress(w, direction) is not { } p || !DrawWeight.IsResting(p.ConsecutiveCorrect, p.LastSeenAt)).ToList();
-
-        return ready.Count > 0 ? ready : live;
-    }
+    private static List<VocabWord> Askable(List<VocabWord> words, VocabDirection direction) =>
+        words.Where(w => Progress(w, direction) is not { } p
+                         || DrawWeight.IsAvailable(p.ConsecutiveCorrect, p.LastSeenAt))
+             .ToList();
 
     private static VocabProgress? Progress(VocabWord word, VocabDirection direction) =>
         word.Progress.FirstOrDefault(p => p.Direction == direction);

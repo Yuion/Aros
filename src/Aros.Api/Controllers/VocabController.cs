@@ -102,6 +102,25 @@ public class VocabController(
         return NoContent();
     }
 
+    /// <summary>What each direction has left to ask, so the start button can be right before it is pressed.</summary>
+    [HttpGet("availability")]
+    public async Task<IActionResult> Availability([FromQuery] string? tag, CancellationToken ct)
+    {
+        var directions = await vocab.AvailabilityAsync(tag, ct);
+
+        return Ok(directions.Select(d => new
+        {
+            direction = d.Key,
+            ready = d.Ready,
+            resting = d.Resting,
+            mastered = d.Mastered,
+            total = d.Total,
+            restingOut = d.RestingOut,
+            nextDueAt = d.NextDueAt,
+            nextDue = d.NextDueAt is { } due ? Aros.Api.Scheduling.Availability.Due(due) : null,
+        }));
+    }
+
     [HttpPost("session")]
     public async Task<IActionResult> Session(
         [FromQuery] int perDirection = VocabService.DefaultPerDirection,

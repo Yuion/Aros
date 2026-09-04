@@ -48,6 +48,16 @@
         </section>
 
         <section class="card">
+          <h2>Where each mode stands</h2>
+          <p class="card-note">
+            Open / resting / mastered, per mode. Open is what a round can draw on now; resting
+            comes back on its own; mastered is done with. These are the same numbers the Play
+            button uses, so a mode showing no open sentences cannot be started.
+          </p>
+          <MasteryBars :rows="standingRows" />
+        </section>
+
+        <section class="card">
           <h2>By mode</h2>
           <p class="card-note">
             Picking a sentence out of three and writing out what you heard are different skills,
@@ -85,6 +95,7 @@ import { api } from '@/services/api'
 import StatTile from '@/components/stats/StatTile.vue'
 import AccuracyChart from '@/components/stats/AccuracyChart.vue'
 import RankedBars from '@/components/stats/RankedBars.vue'
+import MasteryBars from '@/components/stats/MasteryBars.vue'
 
 // Ordinal blue ramp, validated against the white card surface
 const ORDINAL = ['#bfd7f5', '#9dc3ef', '#7aade9', '#5598e7', '#2a78d6', '#1f66b8', '#16457c']
@@ -110,6 +121,16 @@ const modeRows = computed(() =>
       value: row.accuracy == null ? '—' : percent(row.accuracy),
       detail: row.answers ? `${row.correct}/${row.answers}` : `${row.available} available`,
     })),
+)
+
+const standingRows = computed(() =>
+  (data.value?.standing ?? []).map((row) => ({
+    key: row.key,
+    label: MODE_LABELS[row.key] ?? row.key,
+    open: row.open,
+    resting: row.resting,
+    mastered: row.mastered,
+  })),
 )
 
 const needsWorkRows = computed(() =>

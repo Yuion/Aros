@@ -39,6 +39,25 @@ public class ListeningController(ListeningService listening, TtsService tts) : C
         }
     }
 
+    /// <summary>What each mode has left to ask, so the start button can be right before it is pressed.</summary>
+    [HttpGet("availability")]
+    public async Task<IActionResult> Availability(CancellationToken ct)
+    {
+        var modes = await listening.AvailabilityAsync(ct);
+
+        return Ok(modes.Select(m => new
+        {
+            mode = m.Key,
+            ready = m.Ready,
+            resting = m.Resting,
+            mastered = m.Mastered,
+            total = m.Total,
+            restingOut = m.RestingOut,
+            nextDueAt = m.NextDueAt,
+            nextDue = m.NextDueAt is { } due ? Scheduling.Availability.Due(due) : null,
+        }));
+    }
+
     /// <summary>Audio by question token, so the answer never appears in the quiz payload.</summary>
     [HttpGet("audio/{token:guid}")]
     public async Task<IActionResult> Audio(Guid token, CancellationToken ct)

@@ -20,16 +20,34 @@
       </p>
 
       <div class="start">
-        <button class="play-button" :disabled="!ready.length" @click="start">
+        <button class="play-button" :disabled="!selected.ready" @click="start">
           <span class="play-label">Start</span>
-          <span class="play-sub">{{ ready.length }} ready</span>
+          <span class="play-sub">{{ selected.ready }} ready</span>
         </button>
 
         <select v-model="direction" class="direction-select">
           <option value="">All directions</option>
-          <option v-for="d in DIRECTIONS" :key="d.value" :value="d.value">{{ d.label }}</option>
+          <option v-for="d in DIRECTIONS" :key="d.value" :value="d.value">
+            {{ d.label }} — {{ readyFor(d.value) }} ready
+          </option>
         </select>
       </div>
+
+      <!-- Nothing to draw, and why -->
+      <p v-if="!selected.ready && ready.length" class="notice resting">
+        <template v-if="selected.resting">
+          {{ direction ? 'This direction is' : 'Every direction is' }} resting —
+          {{ selected.resting }} waiting, next due {{ selected.nextDue }}.
+          <template v-if="direction"> Pick another direction, or come back then.</template>
+        </template>
+        <template v-else-if="selected.mastered">
+          {{ direction ? 'This direction is' : 'Everything is' }} mastered.
+          Add more vocabulary to keep going.
+        </template>
+        <template v-else>
+          Nothing testable in that direction — those words may still be waiting for review.
+        </template>
+      </p>
 
       <form class="add-word" @submit.prevent="addWord">
         <input
@@ -146,14 +164,38 @@ const added = ref([])
 const ready = computed(() => words.value.filter((w) => !w.needsReview))
 const review = computed(() => words.value.filter((w) => w.needsReview))
 
+const availability = ref([])
+
+function readyFor(id) {
+  return availability.value.find((a) => a.direction === id)?.ready ?? 0
+}
+
+// What the Start button is about to draw on: one direction, or all six together
+const selected = computed(() => {
+  const rows = direction.value
+    ? availability.value.filter((a) => a.direction === direction.value)
+    : availability.value
+
+  const due = rows.map((r) => r.nextDueAt).filter(Boolean).sort()[0]
+
+  return {
+    ready: rows.reduce((n, r) => n + r.ready, 0),
+    resting: rows.reduce((n, r) => n + r.resting, 0),
+    mastered: rows.reduce((n, r) => n + r.mastered, 0),
+    nextDue: rows.find((r) => r.nextDueAt === due)?.nextDue ?? '',
+  }
+})
+
 async function load() {
   try {
-    const [list, status] = await Promise.all([
+    const [list, status, modes] = await Promise.all([
       api.get('/vocab/words'),
       api.get('/vocab/dictionary/status'),
+      api.get('/vocab/availability'),
     ])
     words.value = list
     dictionaryEntries.value = status.entries
+    availability.value = modes
 
     for (const word of list) {
       if (word.needsReview) edits[word.id] = { pinyin: word.pinyin, english: word.english }
@@ -266,6 +308,13 @@ h1 {
   border-radius: 8px;
   color: #92400e;
   font-size: 0.85rem;
+}
+
+/* Resting is a scheduled pause, not a problem — say it calmly */
+.notice.resting {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1e40af;
 }
 
 .placeholder {
