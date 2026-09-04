@@ -67,7 +67,7 @@
           <span lang="zh">{{ answer.correctSentence }}</span>
           <span class="expected-answer">{{ answer.expected }}</span>
         </p>
-        <button class="primary" @click="next">
+        <button v-if="!autoAdvancing" ref="nextButton" class="primary" @click="next">
           {{ index + 1 === questions.length ? 'See score' : 'Next' }}
         </button>
       </div>
@@ -78,9 +78,12 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { api } from '@/services/api'
+
+// Long enough to register the ✓, short enough that typing does not stall on it
+const CORRECT_PAUSE = 1000
 
 const MODE_LABELS = {
   Characters: 'Pick what you heard',
@@ -102,8 +105,13 @@ const loading = ref(true)
 const error = ref('')
 const player = ref(null)
 const field = ref(null)
+const nextButton = ref(null)
+let advance = null
 
 const current = computed(() => questions.value[index.value])
+
+// A right answer in a writing mode moves on by itself; everything else waits for Next
+const autoAdvancing = computed(() => !!answer.value?.correct && typed.value)
 
 const verdict = computed(() => {
   const ratio = correctCount.value / questions.value.length
@@ -113,6 +121,8 @@ const verdict = computed(() => {
 })
 
 async function loadQuiz() {
+  clearTimeout(advance)
+  advance = null
   loading.value = true
   error.value = ''
   finished.value = false
@@ -158,7 +168,17 @@ async function send(payload) {
   try {
     const result = await api.post('/listening/answer', { token: current.value.token, ...payload })
     answer.value = { ...result, selectedClipId: payload.selectedClipId }
-    if (result.correct) correctCount.value++
+
+    if (result.correct) {
+      correctCount.value++
+
+      // Right answers carry nothing to read, so hold the ✓ briefly and move on. A miss
+      // waits: the sentence and its expected answer are the whole point of showing it.
+      if (typed.value) advance = setTimeout(next, CORRECT_PAUSE)
+    }
+
+    // Enter now works the Next button, so a whole round needs no mouse
+    if (!advance) await nextTick(() => nextButton.value?.focus())
   } catch (e) {
     error.value = e.message
   }
@@ -172,6 +192,9 @@ function optionClass(option) {
 }
 
 async function next() {
+  clearTimeout(advance)
+  advance = null
+
   answer.value = null
   text.value = ''
 
@@ -187,6 +210,7 @@ async function next() {
 }
 
 onMounted(loadQuiz)
+onUnmounted(() => clearTimeout(advance))
 </script>
 
 <style scoped>

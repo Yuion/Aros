@@ -71,7 +71,7 @@
         <p v-if="!answer.correct" class="expected">
           <span lang="zh">{{ answer.characters }}</span> — {{ answer.expected }}
         </p>
-        <button class="primary" @click="next">
+        <button v-if="!autoAdvancing" ref="nextButton" class="primary" @click="next">
           {{ index + 1 === questions.length ? 'See score' : 'Next' }}
         </button>
       </div>
@@ -80,9 +80,12 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { api } from '@/services/api'
+
+// Long enough to register the ✓, short enough that typing does not stall on it
+const CORRECT_PAUSE = 1000
 
 const route = useRoute()
 
@@ -96,10 +99,17 @@ const finished = ref(false)
 const loading = ref(true)
 const error = ref('')
 const field = ref(null)
+const nextButton = ref(null)
+let advance = null
 
 const current = computed(() => questions.value[index.value])
 
+// A right answer to a typed question moves on by itself; everything else waits for Next
+const autoAdvancing = computed(() => !!answer.value?.correct && !!current.value?.typed)
+
 async function load() {
+  clearTimeout(advance)
+  advance = null
   loading.value = true
   error.value = ''
   finished.value = false
@@ -154,7 +164,17 @@ async function send(payload) {
 
     retry.value = ''
     answer.value = { ...result, selectedWordId: payload.selectedWordId }
-    if (result.correct) correctCount.value++
+
+    if (result.correct) {
+      correctCount.value++
+
+      // Right answers carry nothing to read, so hold the ✓ briefly and move on. A miss
+      // waits: the expected answer is the whole point of showing it.
+      if (current.value.typed) advance = setTimeout(next, CORRECT_PAUSE)
+    }
+
+    // Enter now works the Next button, so a whole round needs no mouse
+    if (!advance) await nextTick(() => nextButton.value?.focus())
   } catch (e) {
     error.value = e.message
   }
@@ -168,6 +188,9 @@ function optionClass(option) {
 }
 
 async function next() {
+  clearTimeout(advance)
+  advance = null
+
   answer.value = null
   retry.value = ''
   text.value = ''
@@ -182,6 +205,7 @@ async function next() {
 }
 
 onMounted(load)
+onUnmounted(() => clearTimeout(advance))
 </script>
 
 <style scoped>
