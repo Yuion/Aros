@@ -9,7 +9,15 @@ namespace Aros.Api.Listening;
 
 public record QuizOption(int ClipId, string Sentence);
 
-public record QuizQuestion(Guid Token, ListeningMode Mode, bool Typed, IReadOnlyList<QuizOption>? Options);
+/// <summary>A sound-alike character the sentence uses, and the ones it could have been.</summary>
+public record QuizHint(string Character, string Alternatives);
+
+public record QuizQuestion(
+    Guid Token,
+    ListeningMode Mode,
+    bool Typed,
+    IReadOnlyList<QuizOption>? Options,
+    IReadOnlyList<QuizHint>? Hints);
 
 public record Quiz(ListeningMode Mode, IReadOnlyList<QuizQuestion> Questions);
 
@@ -53,8 +61,10 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
             .AsNoTracking()
             .ToListAsync(ct);
 
+        var groups = await db.HomophoneGroups.AsNoTracking().ToListAsync(ct);
+
         // Only the picking mode needs to know what sounds like what
-        var audible = mode == ListeningMode.Characters ? await AudibleFormsAsync(clips, ct) : null;
+        var audible = mode == ListeningMode.Characters ? AudibleForms(clips, groups) : null;
 
         var eligible = Eligible(clips, mode, audible!);
 
@@ -78,7 +88,7 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         var answers = PickWeighted(askable, mode, wanted);
 
         var questions = answers
-            .Select(answer => BuildQuestion(answer, mode, clips, audible))
+            .Select(answer => BuildQuestion(answer, mode, clips, audible, groups))
             .ToList();
 
         return new Quiz(mode, questions);
@@ -161,9 +171,12 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         _ => "No sentence has an English translation yet. Import sentences with pinyin and English in Chinese TTS.",
     };
 
-    private async Task<Dictionary<int, string>> AudibleFormsAsync(List<TtsClip> clips, CancellationToken ct)
+    private async Task<Dictionary<int, string>> AudibleFormsAsync(List<TtsClip> clips, CancellationToken ct) =>
+        AudibleForms(clips, await db.HomophoneGroups.AsNoTracking().ToListAsync(ct));
+
+    private static Dictionary<int, string> AudibleForms(List<TtsClip> clips, List<HomophoneGroup> groups)
     {
-        var map = Homophones.BuildMap(await db.HomophoneGroups.AsNoTracking().ToListAsync(ct));
+        var map = Homophones.BuildMap(groups);
         return clips.ToDictionary(c => c.Id, c => Homophones.AudibleForm(c.Sentence, map));
     }
 
@@ -177,7 +190,11 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
             : clips.Where(c => DistinctSoundCount(c, clips, audible) >= 2).ToList();
 
     private QuizQuestion BuildQuestion(
-        TtsClip answer, ListeningMode mode, List<TtsClip> allClips, Dictionary<int, string>? audible)
+        TtsClip answer,
+        ListeningMode mode,
+        List<TtsClip> allClips,
+        Dictionary<int, string>? audible,
+        List<HomophoneGroup> groups)
     {
         var options = mode == ListeningMode.Characters
             ? PickDistractors(answer, allClips, audible!)
@@ -187,10 +204,19 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
                 .ToList()
             : null;
 
+        // Only the translation needs disambiguating. Picking the sentence shows every candidate
+        // already, and pinyin is the same for every member of a group — that is what makes them a
+        // group. Naming the character in those modes would just hand over the answer.
+        var hints = mode == ListeningMode.English
+            ? Homophones.Ambiguities(answer.Sentence, groups)
+                .Select(a => new QuizHint(a.Character, a.Alternatives))
+                .ToList()
+            : null;
+
         var token = Guid.NewGuid();
         cache.Set(CacheKey(token), new QuestionState { ClipId = answer.Id, Mode = mode }, TokenLifetime);
 
-        return new QuizQuestion(token, mode, IsTyped(mode), options);
+        return new QuizQuestion(token, mode, IsTyped(mode), options, hints is { Count: > 0 } ? hints : null);
     }
 
     /// <summary>

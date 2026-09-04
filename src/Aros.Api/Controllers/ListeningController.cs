@@ -31,6 +31,7 @@ public class ListeningController(ListeningService listening, TtsService tts) : C
                     token = q.Token,
                     audioUrl = $"/api/listening/audio/{q.Token}",
                     options = q.Options?.Select(o => new { clipId = o.ClipId, sentence = o.Sentence }),
+                    hints = q.Hints?.Select(h => new { character = h.Character, alternatives = h.Alternatives }),
                 }),
             });
         }

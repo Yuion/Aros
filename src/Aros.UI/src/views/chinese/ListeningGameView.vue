@@ -44,8 +44,16 @@
         </li>
       </ul>
 
+      <!-- 他 and 她 are one sound, so a translation is a coin flip without this -->
+      <ul v-if="current.hints" class="hints">
+        <li v-for="hint in current.hints" :key="hint.character">
+          <span lang="zh" class="hint-char">{{ hint.character }}</span>
+          <span class="hint-not">not <span lang="zh">{{ [...hint.alternatives].join(' / ') }}</span></span>
+        </li>
+      </ul>
+
       <!-- Write what you heard -->
-      <form v-else class="typed" @submit.prevent="submitTyped">
+      <form v-if="typed" class="typed" @submit.prevent="submitTyped">
         <input
           ref="field"
           v-model="text"
@@ -281,6 +289,36 @@ onUnmounted(() => clearTimeout(advance))
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: #9ca3af;
+}
+
+/* Not a giveaway but a fair chance: the sound alone cannot tell these apart */
+.hints {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.hints li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.35rem 0.7rem;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+}
+
+.hint-char {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1e40af;
+}
+
+.hint-not {
+  font-size: 0.75rem;
+  color: #60769c;
 }
 
 .typed {

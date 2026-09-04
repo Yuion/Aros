@@ -42,6 +42,42 @@ public static class Homophones
         return sb.ToString();
     }
 
+    /// <summary>
+    /// The sound-alike characters this sentence actually uses, each with the others it could have
+    /// been. Translating what you heard is impossible without this: 他 and 她 are one sound, so
+    /// "he likes tea" and "she likes tea" are both faithful and only one is marked right.
+    /// Order follows the sentence, and a character used twice is named once.
+    /// </summary>
+    public static List<(string Character, string Alternatives)> Ambiguities(
+        string sentence, IEnumerable<HomophoneGroup> groups)
+    {
+        var byCharacter = new Dictionary<Rune, List<Rune>>();
+
+        foreach (var group in groups)
+        {
+            var runes = Runes(group.Characters);
+            if (runes.Count < 2) continue;
+
+            foreach (var rune in runes)
+                byCharacter.TryAdd(rune, runes);
+        }
+
+        var found = new List<(string, string)>();
+        var seen = new HashSet<Rune>();
+
+        foreach (var rune in sentence.EnumerateRunes())
+        {
+            if (!byCharacter.TryGetValue(rune, out var siblings)) continue;
+            if (!seen.Add(rune)) continue;
+
+            found.Add((
+                rune.ToString(),
+                string.Concat(siblings.Where(s => s != rune).Select(s => s.ToString()))));
+        }
+
+        return found;
+    }
+
     public static List<Rune> Runes(string? text) =>
         string.IsNullOrEmpty(text) ? [] : text.EnumerateRunes().ToList();
 }
