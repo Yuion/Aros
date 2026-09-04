@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Aros.Api.Controllers;
 
 public record AnswerRequest(Guid Token, int? SelectedClipId, string? Text);
+public record OverrideRequest(Guid Token);
 
 [ApiController]
 [Route("api/[controller]")]
@@ -33,6 +34,30 @@ public class ListeningController(ListeningService listening, TtsService tts) : C
                     options = q.Options?.Select(o => new { clipId = o.ClipId, sentence = o.Sentence }),
                     hints = q.Hints?.Select(h => new { character = h.Character, alternatives = h.Alternatives }),
                 }),
+            });
+        }
+        catch (ListeningException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// "I was right after all" — for a translation the matcher rejected. The miss is undone, not
+    /// offset: see <see cref="ListeningService.OverrideAsync"/>.
+    /// </summary>
+    [HttpPost("override")]
+    public async Task<IActionResult> Override([FromBody] OverrideRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var result = await listening.OverrideAsync(request.Token, ct);
+
+            return Ok(new
+            {
+                correct = result.Correct,
+                correctSentence = result.CorrectSentence,
+                expected = result.Expected,
             });
         }
         catch (ListeningException ex)

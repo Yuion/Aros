@@ -46,6 +46,13 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         public required int ClipId { get; init; }
         public required ListeningMode Mode { get; init; }
         public bool Answered { get; set; }
+
+        // Enough to undo a miss if you overrule the marking: the streak the miss destroyed, and
+        // the history row to rewrite. Held with the question rather than recomputed, because
+        // once the miss is recorded the previous streak is gone from the database.
+        public int StreakBefore { get; set; }
+        public int AnswerId { get; set; }
+        public bool Overridden { get; set; }
     }
 
     /// <summary>
@@ -116,17 +123,69 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         if (!state.Answered)
         {
             state.Answered = true;
+            state.StreakBefore = Stat(clip, state.Mode)?.ConsecutiveCorrect ?? 0;
+
             RecordScore(clip, state.Mode, correct);
-            db.ListeningAnswers.Add(new ListeningAnswer
+
+            var record = new ListeningAnswer
             {
                 TtsClipId = clip.Id,
                 Mode = state.Mode,
                 Correct = correct,
-            });
+            };
+
+            db.ListeningAnswers.Add(record);
             await db.SaveChangesAsync(ct);
+
+            state.AnswerId = record.Id;
         }
 
         return new AnswerResult(correct, clip.Id, clip.Sentence, Expected(clip, state.Mode), note);
+    }
+
+    /// <summary>
+    /// Overrules a miss on a translation you consider right. A stored translation is one wording of
+    /// many — "do you eat?" against "do you eat / have a meal?" is not a mistake — and no matcher
+    /// can settle that, so the judgement is yours. The miss is undone rather than offset: the wrong
+    /// count comes back down, the streak the miss destroyed is restored and carried forward, and
+    /// the history row is rewritten. Anything else would leave the sentence on the lapsed ladder
+    /// for a mistake you did not make.
+    ///
+    /// Only the English mode allows it. Pinyin is marked exactly and tone-strictly on purpose, and
+    /// picking the sentence has one right answer with nothing to argue about.
+    /// </summary>
+    public async Task<AnswerResult> OverrideAsync(Guid token, CancellationToken ct)
+    {
+        var state = Lookup(token);
+
+        if (state.Mode != ListeningMode.English)
+            throw new ListeningException("Only a translation can be marked right by hand.");
+        if (!state.Answered)
+            throw new ListeningException("That question has not been answered yet.");
+
+        var clip = await db.TtsClips
+            .Include(c => c.Stats)
+            .FirstOrDefaultAsync(c => c.Id == state.ClipId, ct)
+            ?? throw new ListeningException("That clip no longer exists.");
+
+        if (!state.Overridden)
+        {
+            state.Overridden = true;
+
+            if (Stat(clip, state.Mode) is { } stat)
+            {
+                stat.WrongCount = Math.Max(0, stat.WrongCount - 1);
+                stat.CorrectCount++;
+                stat.ConsecutiveCorrect = state.StreakBefore + 1;
+            }
+
+            if (await db.ListeningAnswers.FirstOrDefaultAsync(a => a.Id == state.AnswerId, ct) is { } record)
+                record.Correct = true;
+
+            await db.SaveChangesAsync(ct);
+        }
+
+        return new AnswerResult(true, clip.Id, clip.Sentence, Expected(clip, state.Mode), null);
     }
 
     private static (bool Correct, string? Note) Judge(

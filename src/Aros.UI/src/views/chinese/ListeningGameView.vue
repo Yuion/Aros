@@ -75,9 +75,14 @@
           <span lang="zh">{{ answer.correctSentence }}</span>
           <span class="expected-answer">{{ answer.expected }}</span>
         </p>
-        <button v-if="!autoAdvancing" ref="nextButton" class="primary" @click="next">
-          {{ index + 1 === questions.length ? 'See score' : 'Next' }}
-        </button>
+        <div class="feedback-actions">
+          <!-- A stored translation is one wording of many, so the last word is yours -->
+          <button v-if="canOverride" class="overrule" @click="overrule">I was right</button>
+
+          <button v-if="!autoAdvancing" ref="nextButton" class="primary" @click="next">
+            {{ index + 1 === questions.length ? 'See score' : 'Next' }}
+          </button>
+        </div>
       </div>
     </section>
 
@@ -120,6 +125,10 @@ const current = computed(() => questions.value[index.value])
 
 // A right answer in a writing mode moves on by itself; everything else waits for Next
 const autoAdvancing = computed(() => !!answer.value?.correct && typed.value)
+
+// Only a translation can be overruled: pinyin is marked exactly on purpose, and picking the
+// sentence has one right answer with nothing to argue about.
+const canOverride = computed(() => mode.value === 'English' && answer.value && !answer.value.correct)
 
 const verdict = computed(() => {
   const ratio = correctCount.value / questions.value.length
@@ -190,6 +199,18 @@ async function send(payload) {
 
     // Enter now works the Next button, so a whole round needs no mouse
     if (!advance) await nextTick(() => nextButton.value?.focus())
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
+async function overrule() {
+  try {
+    const result = await api.post('/listening/override', { token: current.value.token })
+    answer.value = { ...answer.value, ...result }
+    correctCount.value++
+
+    advance = setTimeout(next, CORRECT_PAUSE)
   } catch (e) {
     error.value = e.message
   }
@@ -420,6 +441,28 @@ onUnmounted(() => clearTimeout(advance))
   flex-direction: column;
   align-items: center;
   gap: 0.9rem;
+}
+
+.feedback-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.overrule {
+  padding: 0.55rem 1rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #15803d;
+  background: white;
+  border: 2px solid #bbf7d0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.overrule:hover {
+  border-color: #22c55e;
 }
 
 .feedback .right {
