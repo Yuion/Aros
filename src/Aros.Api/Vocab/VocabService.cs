@@ -52,9 +52,13 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
     /// direction gets equal practice and you settle into one kind of question at a time instead of
     /// being thrown between six. Picking a single direction turns the round into a drill of just
     /// that one, which is the only reason to filter.
+    ///
+    /// A <paramref name="sweep"/> takes the whole pool instead of a sample: every word that is not
+    /// resting, once each. The order is still drawn by weight, so the ones most due come up first,
+    /// but nothing is left out and the round ends when the pool does.
     /// </summary>
     public async Task<VocabSession> BuildSessionAsync(
-        int perDirection, VocabDirection? only, string? tag, CancellationToken ct)
+        int perDirection, VocabDirection? only, string? tag, bool sweep, CancellationToken ct)
     {
         var words = await TestableAsync(tag, ct);
         var unique = PromptCounts(words);
@@ -88,9 +92,11 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
                     : "Everything testable here is mastered. Add more vocabulary.");
         }
 
-        var perBlock = only is null
-            ? Math.Max(1, perDirection)
-            : SingleDirectionCount;          // filtering means drilling that one direction
+        var perBlock = sweep
+            ? int.MaxValue                   // the block is however much the direction has left
+            : only is null
+                ? Math.Max(1, perDirection)
+                : SingleDirectionCount;      // filtering means drilling that one direction
 
         var blocks = new List<List<VocabQuestion>>();
 

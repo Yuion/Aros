@@ -22,15 +22,30 @@
       <div class="start">
         <button class="play-button" :disabled="!selected.ready" @click="start">
           <span class="play-label">Start</span>
-          <span class="play-sub">{{ selected.ready }} ready</span>
+          <span class="play-sub">{{ roundLength }}</span>
         </button>
 
-        <select v-model="direction" class="direction-select">
-          <option value="">All directions</option>
-          <option v-for="d in DIRECTIONS" :key="d.value" :value="d.value">
-            {{ d.label }} — {{ readyFor(d.value) }} ready
-          </option>
-        </select>
+        <div class="start-options">
+          <select v-model="direction" class="direction-select">
+            <option value="">All directions</option>
+            <option v-for="d in DIRECTIONS" :key="d.value" :value="d.value">
+              {{ d.label }} — {{ readyFor(d.value) }} ready
+            </option>
+          </select>
+
+          <!-- Everything, or a sample of it -->
+          <div class="round-modes">
+            <button
+              v-for="option in ROUND_MODES"
+              :key="option.id"
+              class="round-mode"
+              :class="{ active: sweep === option.sweep }"
+              @click="sweep = option.sweep"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- Nothing to draw, and why -->
@@ -164,7 +179,27 @@ const added = ref([])
 const ready = computed(() => words.value.filter((w) => !w.needsReview))
 const review = computed(() => words.value.filter((w) => w.needsReview))
 
+const ROUND_MODES = [
+  { id: 'sweep', label: 'Everything', sweep: true },
+  { id: 'sample', label: 'Short round', sweep: false },
+]
+
+const sweep = ref(true)
 const availability = ref([])
+
+// What Start is about to hand you, so the size of a sweep is never a surprise. A short
+// round is capped per direction, so it is shorter than its nominal length once a pool runs low.
+const roundLength = computed(() => {
+  const ready = selected.value.ready
+  if (!ready) return 'nothing ready'
+  if (sweep.value) return `${ready} questions`
+
+  const count = direction.value
+    ? Math.min(10, ready)
+    : availability.value.reduce((total, row) => total + Math.min(3, row.ready), 0)
+
+  return `${count} questions`
+})
 
 function readyFor(id) {
   return availability.value.find((a) => a.direction === id)?.ready ?? 0
@@ -208,10 +243,11 @@ async function load() {
 }
 
 function start() {
-  router.push({
-    path: '/vocab/session',
-    query: direction.value ? { direction: direction.value } : {},
-  })
+  const query = {}
+  if (direction.value) query.direction = direction.value
+  if (!sweep.value) query.sweep = 'false'
+
+  router.push({ path: '/vocab/session', query })
 }
 
 async function addWord() {
@@ -444,6 +480,39 @@ h1 {
   background: white;
   border-radius: 5px;
   padding: 0.1rem 0.4rem;
+}
+
+.start-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.round-modes {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.round-mode {
+  padding: 0.4rem 0.8rem;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #6b7280;
+  background: white;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.round-mode:hover {
+  border-color: #cba6f7;
+}
+
+.round-mode.active {
+  border-color: #6d5bd0;
+  color: #6d5bd0;
 }
 
 .direction-select {

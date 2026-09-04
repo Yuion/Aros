@@ -121,16 +121,20 @@ public class VocabController(
         }));
     }
 
+    /// <param name="sweep">
+    /// Default. Take every word that is not resting, once each, rather than a sample of them.
+    /// </param>
     [HttpPost("session")]
     public async Task<IActionResult> Session(
         [FromQuery] int perDirection = VocabService.DefaultPerDirection,
         [FromQuery] VocabDirection? direction = null,
         [FromQuery] string? tag = null,
+        [FromQuery] bool sweep = true,
         CancellationToken ct = default)
     {
         try
         {
-            var session = await vocab.BuildSessionAsync(perDirection, direction, tag, ct);
+            var session = await vocab.BuildSessionAsync(perDirection, direction, tag, sweep, ct);
 
             return Ok(new
             {

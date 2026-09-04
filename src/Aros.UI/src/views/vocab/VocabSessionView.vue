@@ -119,10 +119,11 @@ async function load() {
   index.value = 0
   correctCount.value = 0
 
-  // Length is decided server-side: three per direction, or a longer drill of one
+  // Length is decided server-side: everything not resting, or a sample of it
   const params = new URLSearchParams()
   if (route.query.direction) params.set('direction', route.query.direction)
   if (route.query.tag) params.set('tag', route.query.tag)
+  if (route.query.sweep === 'false') params.set('sweep', 'false')
 
   try {
     const session = await api.post(`/vocab/session?${params}`)
