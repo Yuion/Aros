@@ -1,6 +1,6 @@
 using Aros.Api.Data;
+using Aros.Api.Text;
 using Aros.Api.Tts;
-using Aros.Api.Vocab;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,7 +10,7 @@ public record SpeakRequest(string? Text);
 
 [ApiController]
 [Route("api/[controller]")]
-public class TtsController(AppDbContext db, TtsService tts, VocabHarvester harvester) : ControllerBase
+public class TtsController(AppDbContext db, TtsService tts) : ControllerBase
 {
     /// <summary>Play a sentence — reuses the cached audio when we already own it, otherwise buys one synthesis.</summary>
     [HttpPost("speak")]
@@ -20,9 +20,6 @@ public class TtsController(AppDbContext db, TtsService tts, VocabHarvester harve
         {
             var (clip, cached) = await tts.GetOrCreateAsync(request.Text, ct: ct);
 
-            // Every sentence entered here grows the vocabulary pool
-            var harvest = await harvester.HarvestAsync(clip.Sentence, ct);
-
             return Ok(new
             {
                 id = clip.Id,
@@ -31,8 +28,6 @@ public class TtsController(AppDbContext db, TtsService tts, VocabHarvester harve
                 durationSeconds = clip.DurationSeconds,
                 cached,
                 audioUrl = $"/api/tts/clips/{clip.Id}/audio",
-                newWords = harvest.Words,
-                newWordsNeedingReview = harvest.NeedsReview,
             });
         }
         catch (TtsException ex)
@@ -48,8 +43,8 @@ public class TtsController(AppDbContext db, TtsService tts, VocabHarvester harve
     [HttpPost("import/preview")]
     public async Task<IActionResult> ImportPreview([FromBody] SpeakRequest request, CancellationToken ct)
     {
-        var rows = SentenceDump.Parse(request.Text);
-        var normalized = rows.Select(r => (Row: r, Key: ChineseText.Normalize(r.Sentence))).ToList();
+        var rows = TableDump.Parse(request.Text);
+        var normalized = rows.Select(r => (Row: r, Key: ChineseText.Normalize(r.Chinese))).ToList();
 
         var keys = normalized.Select(n => n.Key).ToList();
         var held = await db.TtsClips
@@ -71,7 +66,7 @@ public class TtsController(AppDbContext db, TtsService tts, VocabHarvester harve
                 (c.English.Length > 0 || n.Row.English.Length == 0)),
             rows = rows.Take(50).Select(r => new
             {
-                sentence = r.Sentence,
+                sentence = r.Chinese,
                 pinyin = r.Pinyin,
                 english = r.English,
             }),
@@ -79,20 +74,20 @@ public class TtsController(AppDbContext db, TtsService tts, VocabHarvester harve
     }
 
     /// <summary>
-    /// Imports a pasted batch: one synthesis per sentence not already held, a blank pinyin or
-    /// translation filled in on those that are, and vocabulary harvested from all of them.
+    /// Imports a pasted batch: one synthesis per sentence not already held, and a blank pinyin or
+    /// translation filled in on those that are. Vocabulary is a separate paste, in the vocabulary
+    /// trainer — a sentence brings its own audio and readings, not a guess at its word boundaries.
     /// </summary>
     [HttpPost("import")]
     public async Task<IActionResult> Import([FromBody] SpeakRequest request, CancellationToken ct)
     {
-        var rows = SentenceDump.Parse(request.Text);
+        var rows = TableDump.Parse(request.Text);
 
         if (rows.Count == 0)
             return BadRequest(new { message = "Nothing to import — no line held a Chinese sentence." });
 
         var added = 0;
         var reused = 0;
-        var newWords = 0;
         var failures = new List<object>();
 
         // One at a time: each new sentence is a paid call, and a partial import that reports
@@ -101,18 +96,16 @@ public class TtsController(AppDbContext db, TtsService tts, VocabHarvester harve
         {
             try
             {
-                var (clip, cached) = await tts.GetOrCreateAsync(row.Sentence, row.Pinyin, row.English, ct);
+                var (clip, cached) = await tts.GetOrCreateAsync(row.Chinese, row.Pinyin, row.English, ct);
                 if (cached) reused++; else added++;
-
-                newWords += (await harvester.HarvestAsync(clip.Sentence, ct)).Added;
             }
             catch (Exception ex) when (ex is TtsException or HttpRequestException)
             {
-                failures.Add(new { sentence = row.Sentence, message = ex.Message });
+                failures.Add(new { sentence = row.Chinese, message = ex.Message });
             }
         }
 
-        return Ok(new { parsed = rows.Count, added, reused, newWords, failures });
+        return Ok(new { parsed = rows.Count, added, reused, failures });
     }
 
     [HttpGet("clips")]

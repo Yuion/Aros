@@ -1,11 +1,13 @@
 using System.Text.RegularExpressions;
 
-namespace Aros.Api.Tts;
+namespace Aros.Api.Text;
 
-public record DumpRow(string Sentence, string Pinyin, string English);
+public record DumpRow(string Chinese, string Pinyin, string English);
 
 /// <summary>
-/// Reads a pasted batch of sentences — the markdown table a chat assistant produces:
+/// Reads a pasted markdown table of Chinese, pinyin and English — the shape a chat assistant
+/// produces. Used for both batches of sentences and batches of vocabulary; the rows differ only in
+/// what the Chinese cell holds.
 ///
 /// <code>
 /// | Chinese | Pinyin             | Meaning     |
@@ -14,11 +16,11 @@ public record DumpRow(string Sentence, string Pinyin, string English);
 /// </code>
 ///
 /// Rows are found by content rather than by position: the cell holding Han characters is the
-/// sentence and the tone-numbered cell is the pinyin, whichever columns they arrive in. Headers,
+/// Chinese and the tone-numbered cell is the pinyin, whichever columns they arrive in. Headers,
 /// rule lines and anything without Chinese in it are skipped, so pasting the surrounding chat
 /// text along with the table costs nothing.
 /// </summary>
-public static partial class SentenceDump
+public static partial class TableDump
 {
     [GeneratedRegex(@"^:?-{2,}:?$")]
     private static partial Regex RuleCell();
@@ -39,14 +41,15 @@ public static partial class SentenceDump
             var cells = Cells(line);
             if (cells.Count < 2) continue;
 
-            var sentence = cells.FirstOrDefault(HasHan);
-            if (sentence is null) continue;                 // header, rule, or prose around the table
+            var chinese = cells.FirstOrDefault(HasHan);
+            if (chinese is null) continue;                  // header, rule, or prose around the table
 
-            var rest = cells.Where(c => c != sentence).ToList();
+            var rest = cells.Where(c => c != chinese).ToList();
             var pinyin = rest.FirstOrDefault(c => TonedPinyin().IsMatch(c)) ?? "";
             var english = rest.FirstOrDefault(c => c != pinyin && c.Length > 0) ?? "";
 
-            if (seen.Add(sentence)) rows.Add(new DumpRow(sentence, pinyin, english));
+            // A word listed twice with two readings is two rows, not one
+            if (seen.Add($"{chinese}|{pinyin}")) rows.Add(new DumpRow(chinese, pinyin, english));
         }
 
         return rows;

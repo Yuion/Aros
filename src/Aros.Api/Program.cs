@@ -34,6 +34,7 @@ builder.Services.AddScoped<ListeningService>();
 builder.Services.AddScoped<VocabService>();
 builder.Services.AddScoped<VocabHarvester>();
 builder.Services.AddScoped<CedictImporter>();
+builder.Services.AddScoped<VocabImporter>();
 builder.Services.AddHttpClient(nameof(CedictImporter), client => client.Timeout = TimeSpan.FromMinutes(5));
 
 // Auto-register all ISyncHandler implementations in this assembly

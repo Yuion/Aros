@@ -16,6 +16,7 @@ public class VocabController(
     AppDbContext db,
     VocabService vocab,
     VocabHarvester harvester,
+    VocabImporter dump,
     CedictImporter importer) : ControllerBase
 {
     [HttpGet("words")]
@@ -69,6 +70,34 @@ public class VocabController(
             return BadRequest(new { message = ex.Message });
         }
     }
+
+    /// <summary>What a pasted table would do, without writing anything.</summary>
+    [HttpPost("import/preview")]
+    public async Task<IActionResult> ImportPreview([FromBody] AddWordRequest request, CancellationToken ct) =>
+        Ok(Describe(await dump.PreviewAsync(request.Characters, ct)));
+
+    /// <summary>
+    /// Import a pasted table of words. Matching is on characters and pinyin, so a second reading of
+    /// the same character is reported rather than silently replacing the first.
+    /// </summary>
+    [HttpPost("import")]
+    public async Task<IActionResult> Import([FromBody] AddWordRequest request, CancellationToken ct) =>
+        Ok(Describe(await dump.ImportAsync(request.Characters, ct)));
+
+    private static object Describe(VocabImportResult result) => new
+    {
+        parsed = result.Parsed,
+        added = result.Added,
+        updated = result.Updated,
+        unchanged = result.Unchanged,
+        skipped = result.Skipped,
+        conflicts = result.Conflicts.Select(c => new
+        {
+            characters = c.Characters,
+            pinyin = c.Pinyin,
+            heldPinyin = c.HeldPinyin,
+        }),
+    };
 
     /// <summary>Fix a harvested entry and clear its review flag so it enters the rotation.</summary>
     [HttpPut("words/{id:int}")]

@@ -87,8 +87,7 @@
         </p>
 
         <p v-if="importResult" class="preview done">
-          {{ importResult.added }} synthesized, {{ importResult.reused }} already held,
-          {{ importResult.newWords }} new words for review.
+          {{ importResult.added }} synthesized, {{ importResult.reused }} already held.
           <template v-if="importResult.failures.length">
             {{ importResult.failures.length }} failed.
           </template>
