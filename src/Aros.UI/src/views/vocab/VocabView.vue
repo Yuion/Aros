@@ -169,12 +169,6 @@
           </li>
         </ul>
       </section>
-
-      <p class="attribution">
-        Dictionary data from
-        <a href="https://www.mdbg.net/chinese/dictionary?page=cedict" target="_blank" rel="noopener">CC-CEDICT</a>,
-        used under CC BY-SA 4.0.
-      </p>
     </template>
   </div>
 </template>
@@ -731,15 +725,7 @@ h1 {
   color: #b91c1c;
 }
 
-.attribution {
-  font-size: 0.7rem;
-  color: #9ca3af;
-  text-align: center;
-}
 
-.attribution a {
-  color: #6b7280;
-}
 
 @media (max-width: 560px) {
   .word-list li {
