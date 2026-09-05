@@ -330,7 +330,7 @@ async function checkDump() {
   applied.value = null
 
   try {
-    preview.value = await api.post('/vocab/import/preview', { characters: dump.value })
+    preview.value = await api.post('/vocab/import/preview', { text: dump.value })
   } catch (e) {
     error.value = e.message
   }
@@ -341,7 +341,7 @@ async function runImport() {
   pasting.value = true
 
   try {
-    applied.value = { ...(await api.post('/vocab/import', { characters: dump.value })), applied: true }
+    applied.value = { ...(await api.post('/vocab/import', { text: dump.value })), applied: true }
     preview.value = null
 
     // Conflicts are the reason to keep the text: fix the entry, paste the same table again
