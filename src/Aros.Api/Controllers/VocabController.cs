@@ -7,17 +7,13 @@ using Microsoft.EntityFrameworkCore;
 namespace Aros.Api.Controllers;
 
 public record VocabAnswerRequest(Guid Token, string? Text, int? SelectedWordId);
-public record AddWordRequest(string? Characters);
+/// <summary>A pasted table of words. The field is the whole paste, not one word.</summary>
+public record VocabDumpRequest(string? Text);
 public record VocabEditRequest(string? Pinyin, string? English, string[]? Tags, string? Notes);
 
 [ApiController]
 [Route("api/[controller]")]
-public class VocabController(
-    AppDbContext db,
-    VocabService vocab,
-    VocabHarvester harvester,
-    VocabImporter dump,
-    CedictImporter importer) : ControllerBase
+public class VocabController(AppDbContext db, VocabService vocab, VocabImporter dump) : ControllerBase
 {
     [HttpGet("words")]
     public async Task<IActionResult> Words([FromQuery] bool? needsReview, CancellationToken ct)
@@ -45,44 +41,18 @@ public class VocabController(
         return Ok(words);
     }
 
-    /// <summary>Add a character or word directly, without going through a sentence.</summary>
-    [HttpPost("words")]
-    public async Task<IActionResult> Add([FromBody] AddWordRequest request, CancellationToken ct)
-    {
-        try
-        {
-            var words = await harvester.AddAsync(request.Characters, ct);
-
-            return Ok(new
-            {
-                added = words.Select(word => new
-                {
-                    id = word.Id,
-                    characters = word.Characters,
-                    pinyin = word.Pinyin,
-                    english = word.English,
-                    needsReview = word.NeedsReview,
-                }),
-            });
-        }
-        catch (VocabException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
-    }
-
     /// <summary>What a pasted table would do, without writing anything.</summary>
     [HttpPost("import/preview")]
-    public async Task<IActionResult> ImportPreview([FromBody] AddWordRequest request, CancellationToken ct) =>
-        Ok(Describe(await dump.PreviewAsync(request.Characters, ct)));
+    public async Task<IActionResult> ImportPreview([FromBody] VocabDumpRequest request, CancellationToken ct) =>
+        Ok(Describe(await dump.PreviewAsync(request.Text, ct)));
 
     /// <summary>
     /// Import a pasted table of words. Matching is on characters and pinyin, so a second reading of
     /// the same character is reported rather than silently replacing the first.
     /// </summary>
     [HttpPost("import")]
-    public async Task<IActionResult> Import([FromBody] AddWordRequest request, CancellationToken ct) =>
-        Ok(Describe(await dump.ImportAsync(request.Characters, ct)));
+    public async Task<IActionResult> Import([FromBody] VocabDumpRequest request, CancellationToken ct) =>
+        Ok(Describe(await dump.ImportAsync(request.Text, ct)));
 
     private static object Describe(VocabImportResult result) => new
     {
@@ -107,7 +77,7 @@ public class VocabController(
         if (word is null) return NotFound();
 
         if (request.Pinyin is not null)
-            word.Pinyin = CedictImporter.ForDisplay(CedictImporter.NormalizePinyin(request.Pinyin));
+            word.Pinyin = Pinyin.ForDisplay(request.Pinyin);
         if (request.English is not null) word.English = request.English.Trim();
         if (request.Tags is not null) word.Tags = [.. request.Tags.Select(t => t.Trim()).Where(t => t.Length > 0)];
         if (request.Notes is not null) word.Notes = request.Notes.Trim() is { Length: > 0 } n ? n : null;
@@ -205,42 +175,5 @@ public class VocabController(
         {
             return BadRequest(new { message = ex.Message });
         }
-    }
-
-    /// <summary>Collect vocabulary from every sentence already in the TTS library.</summary>
-    [HttpPost("harvest/backfill")]
-    public async Task<IActionResult> Backfill(CancellationToken ct)
-    {
-        var sentences = await db.TtsClips.AsNoTracking().Select(c => c.Sentence).ToListAsync(ct);
-
-        var added = 0;
-        var review = 0;
-
-        foreach (var sentence in sentences)
-        {
-            var result = await harvester.HarvestAsync(sentence, ct);
-            added += result.Added;
-            review += result.NeedsReview;
-        }
-
-        return Ok(new { sentences = sentences.Count, added, needsReview = review });
-    }
-
-    [HttpGet("dictionary/status")]
-    public async Task<IActionResult> DictionaryStatus(CancellationToken ct) =>
-        Ok(new { entries = await db.DictionaryEntries.CountAsync(ct) });
-
-    /// <summary>Downloads CC-CEDICT and loads it. Minutes on a Pi, seconds on a desktop.</summary>
-    [HttpPost("dictionary/import")]
-    public async Task<IActionResult> DictionaryImport([FromQuery] bool force = false, CancellationToken ct = default)
-    {
-        var result = await importer.ImportAsync(force, ct);
-
-        return Ok(new
-        {
-            entries = result.Imported,
-            alreadyPresent = result.AlreadyPresent,
-            source = CedictImporter.SourceUrl,
-        });
     }
 }

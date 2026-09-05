@@ -12,7 +12,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<VocabWord> VocabWords => Set<VocabWord>();
     public DbSet<VocabProgress> VocabProgress => Set<VocabProgress>();
     public DbSet<VocabAnswer> VocabAnswers => Set<VocabAnswer>();
-    public DbSet<DictionaryEntry> DictionaryEntries => Set<DictionaryEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -42,10 +41,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                   .HasForeignKey(a => a.VocabWordId)
                   .OnDelete(DeleteBehavior.Cascade);
         });
-
-        // The dictionary is looked up by exact headword during segmentation, so the index
-        // carries the whole load — 125k rows would otherwise mean a scan per candidate.
-        modelBuilder.Entity<DictionaryEntry>(entity => entity.HasIndex(d => d.Simplified));
 
         modelBuilder.Entity<ListeningAnswer>(entity =>
         {

@@ -12,14 +12,6 @@
     <p v-else-if="loading" class="placeholder">Loading…</p>
 
     <template v-else>
-      <!-- Dictionary needs importing once -->
-      <p v-if="!dictionaryEntries" class="notice">
-        The dictionary is empty, so new words arrive without pinyin or meaning.
-        <button class="link" :disabled="importing" @click="importDictionary">
-          {{ importing ? 'Importing…' : 'Import CC-CEDICT' }}
-        </button>
-      </p>
-
       <div class="start">
         <button class="play-button" :disabled="!selected.ready" @click="start">
           <span class="play-label">Start</span>
@@ -63,24 +55,6 @@
         <template v-else>
           Nothing testable in that direction — those words may still be waiting for review.
         </template>
-      </p>
-
-      <form class="add-word" @submit.prevent="addWord">
-        <input
-          v-model="newWord"
-          lang="zh"
-          placeholder="水  or  中国"
-          :disabled="adding"
-          class="add-input"
-        />
-        <button type="submit" class="add-btn" :disabled="adding || !newWord.trim()">
-          {{ adding ? 'Adding…' : 'Add word' }}
-        </button>
-      </form>
-
-      <p v-if="added.length" class="added">
-        Added {{ added.length }} for review:
-        <span v-for="w in added" :key="w.id" class="added-chip" lang="zh">{{ w.characters }}</span>
       </p>
 
       <!-- The same thing in volume -->
@@ -221,15 +195,10 @@ const DIRECTIONS = [
 
 const router = useRouter()
 const words = ref([])
-const dictionaryEntries = ref(0)
 const direction = ref('')
 const loading = ref(true)
-const importing = ref(false)
 const error = ref('')
 const edits = reactive({})
-const newWord = ref('')
-const adding = ref(false)
-const added = ref([])
 
 const ready = computed(() => words.value.filter((w) => !w.needsReview))
 const review = computed(() => words.value.filter((w) => w.needsReview))
@@ -316,13 +285,11 @@ async function runImport() {
 
 async function load() {
   try {
-    const [list, status, modes] = await Promise.all([
+    const [list, modes] = await Promise.all([
       api.get('/vocab/words'),
-      api.get('/vocab/dictionary/status'),
       api.get('/vocab/availability'),
     ])
     words.value = list
-    dictionaryEntries.value = status.entries
     availability.value = modes
 
     for (const word of list) {
@@ -341,25 +308,6 @@ function start() {
   if (!sweep.value) query.sweep = 'false'
 
   router.push({ path: '/vocab/session', query })
-}
-
-async function addWord() {
-  if (adding.value || !newWord.value.trim()) return
-
-  adding.value = true
-  error.value = ''
-  added.value = []
-
-  try {
-    const result = await api.post('/vocab/words', { characters: newWord.value })
-    added.value = result.added
-    newWord.value = ''
-    await load()
-  } catch (e) {
-    error.value = e.message
-  } finally {
-    adding.value = false
-  }
 }
 
 async function save(word) {
@@ -381,20 +329,6 @@ async function remove(word) {
     await load()
   } catch (e) {
     error.value = e.message
-  }
-}
-
-async function importDictionary() {
-  importing.value = true
-  error.value = ''
-
-  try {
-    const result = await api.post('/vocab/dictionary/import')
-    dictionaryEntries.value = result.entries
-  } catch (e) {
-    error.value = e.message
-  } finally {
-    importing.value = false
   }
 }
 
@@ -453,18 +387,6 @@ h1 {
 
 .placeholder a {
   color: #6d5bd0;
-}
-
-.link {
-  background: none;
-  border: none;
-  color: #92400e;
-  font-family: inherit;
-  font-size: 0.85rem;
-  font-weight: 600;
-  text-decoration: underline;
-  cursor: pointer;
-  padding: 0;
 }
 
 .start {
@@ -597,29 +519,6 @@ h1 {
   font-weight: 600;
 }
 
-.add-word {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.add-input {
-  flex: 1;
-  min-width: 0;
-  max-width: 16rem;
-  padding: 0.5rem 0.7rem;
-  font-family: inherit;
-  font-size: 1.1rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: white;
-  color: #1a1a1a;
-}
-
-.add-input:focus {
-  outline: 2px solid #cba6f7;
-  outline-offset: -1px;
-}
-
 .add-btn {
   padding: 0.5rem 1rem;
   font-size: 0.82rem;
@@ -635,28 +534,6 @@ h1 {
 .add-btn:disabled {
   background: #c7c4d6;
   cursor: not-allowed;
-}
-
-.added {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-  font-size: 0.82rem;
-  color: #92400e;
-  padding: 0.5rem 0.75rem;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: 8px;
-}
-
-.added-chip {
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: #1a1a1a;
-  background: white;
-  border-radius: 5px;
-  padding: 0.1rem 0.4rem;
 }
 
 .start-options {

@@ -112,7 +112,5 @@ public class VocabImporter(AppDbContext db)
     }
 
     /// <summary>Same rules the trainer marks answers by: lowercase, ü as v, single spaces.</summary>
-    private static string Normalize(string pinyin) =>
-        string.Join(' ', CedictImporter.ForDisplay(CedictImporter.NormalizePinyin(pinyin))
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+    private static string Normalize(string pinyin) => Pinyin.ForDisplay(pinyin);
 }
