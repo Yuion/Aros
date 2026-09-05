@@ -111,6 +111,8 @@
         </div>
       </section>
 
+      <audio ref="player" />
+
       <p v-if="!ready.length" class="placeholder">
         Nothing testable yet.
         <template v-if="review.length">Confirm some entries below to get started.</template>
@@ -157,8 +159,21 @@
       <!-- The pool -->
       <section v-if="ready.length" class="card">
         <h2>Words <span class="count">{{ ready.length }}</span></h2>
+        <p class="card-note">
+          ▶ speaks the word. The first time costs one synthesis, then it is cached for good —
+          {{ spoken }} of {{ ready.length }} have audio.
+        </p>
         <ul class="word-list">
           <li v-for="word in ready" :key="word.id">
+            <button
+              class="speak"
+              :class="{ silent: !word.hasAudio }"
+              :disabled="speaking === word.id"
+              :title="word.hasAudio ? 'Play' : 'Speak it — costs one synthesis'"
+              @click="speak(word)"
+            >
+              {{ speaking === word.id ? '…' : '▶' }}
+            </button>
             <span class="chars" lang="zh">{{ word.characters }}</span>
             <span class="pinyin">{{ word.pinyin }}</span>
             <span class="english">{{ word.english }}</span>
@@ -196,6 +211,34 @@ const edits = reactive({})
 
 const ready = computed(() => words.value.filter((w) => !w.needsReview))
 const review = computed(() => words.value.filter((w) => w.needsReview))
+
+const player = ref(null)
+const speaking = ref(0)
+
+const spoken = computed(() => ready.value.filter((w) => w.hasAudio).length)
+
+// One paid synthesis the first time, cached from then on — so the button both buys and plays
+async function speak(word) {
+  if (speaking.value) return
+  speaking.value = word.id
+  error.value = ''
+
+  try {
+    if (!word.hasAudio) {
+      await api.post(`/vocab/words/${word.id}/audio`)
+      word.hasAudio = true
+    }
+
+    if (player.value) {
+      player.value.src = `${word.audioUrl}?v=${word.id}`
+      await player.value.play().catch(() => {})
+    }
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    speaking.value = 0
+  }
+}
 
 const showDump = ref(false)
 const dump = ref('')
@@ -676,9 +719,35 @@ h1 {
   cursor: pointer;
 }
 
+.speak {
+  padding: 0.2rem 0.45rem;
+  font-size: 0.9rem;
+  line-height: 1;
+  color: #6d5bd0;
+  background: white;
+  border: 1px solid #ddd6fe;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.speak:hover {
+  border-color: #6d5bd0;
+}
+
+/* Never spoken: the button will spend money, so it does not look like a plain play button */
+.speak.silent {
+  color: #9ca3af;
+  border-style: dashed;
+}
+
+.speak:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 .word-list li {
   display: grid;
-  grid-template-columns: auto 7rem 1fr auto auto;
+  grid-template-columns: auto auto 7rem 1fr auto auto;
   align-items: center;
   gap: 0.6rem;
   padding: 0.45rem 0.55rem;
@@ -729,7 +798,7 @@ h1 {
 
 @media (max-width: 560px) {
   .word-list li {
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto auto 1fr auto;
   }
 
   .english {

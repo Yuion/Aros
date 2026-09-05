@@ -117,11 +117,44 @@ public class TtsService(
 
     private static string Clean(string? value) => value?.Trim() ?? "";
 
+    /// <summary>
+    /// Speaks a fragment that is not a practice sentence — a vocabulary word — and returns the
+    /// file it landed in. No clip row is written: the listening trainer draws from clips, and a
+    /// single character is not a sentence to be picked out of three.
+    ///
+    /// The file name is the hash of the text, so a word already spoken as part of nothing else
+    /// still costs exactly one synthesis, and never a second.
+    /// </summary>
+    public async Task<string> SpeakFragmentAsync(string? rawText, CancellationToken ct)
+    {
+        var text = ChineseText.Normalize(rawText);
+
+        if (text.Length == 0)
+            throw new TtsException("No text provided.");
+        if (text.Length > _options.MaxCharacters)
+            throw new TtsException($"Text is {text.Length} characters; the limit is {_options.MaxCharacters}.");
+
+        var location = FileNameFor(text);
+        if (File.Exists(ResolvePath(location))) return location;
+
+        var audio = await narakeet.SynthesizeAsync(text, ct);
+
+        Directory.CreateDirectory(_options.MediaPath);
+        await File.WriteAllBytesAsync(ResolvePath(location), audio.Data, ct);
+
+        return location;
+    }
+
     public Stream OpenAudio(TtsClip clip) =>
         File.OpenRead(ResolvePath(clip.Location));
 
     public bool AudioExists(TtsClip clip) =>
         File.Exists(ResolvePath(clip.Location));
+
+    public Stream OpenFile(string location) => File.OpenRead(ResolvePath(location));
+
+    public bool FileExists(string location) =>
+        location.Length > 0 && File.Exists(ResolvePath(location));
 
     public void DeleteAudio(TtsClip clip)
     {

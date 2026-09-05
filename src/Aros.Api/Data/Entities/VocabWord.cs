@@ -1,9 +1,9 @@
 namespace Aros.Api.Data.Entities;
 
 /// <summary>
-/// One vocabulary item — a single character or a multi-character word, harvested from the
-/// sentences in the TTS library. Unique on (Characters, Pinyin), so 多音字 like 行/xing2 and
-/// 行/hang2 are separate entries with separate scores.
+/// One vocabulary item — a single character or a multi-character word. Unique on
+/// (Characters, Pinyin), so 多音字 like 行/xing2 and 行/hang2 are separate entries with separate
+/// scores.
 /// </summary>
 public class VocabWord
 {
@@ -23,6 +23,14 @@ public class VocabWord
 
     /// <summary>The other readings the dictionary offered, for the review screen to choose from.</summary>
     public string? ReadingAlternatives { get; set; }
+
+    /// <summary>
+    /// Audio file name, relative to Tts:MediaPath, or blank if the word has never been spoken.
+    /// Held here rather than as a TtsClip: a clip is a listening-practice sentence, and 我 must
+    /// not turn up as one. Files are content-addressed, so a word and a sentence with the same
+    /// text share one file and one synthesis.
+    /// </summary>
+    public string AudioLocation { get; set; } = "";
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
