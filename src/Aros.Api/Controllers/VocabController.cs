@@ -71,6 +71,44 @@ public class VocabController(AppDbContext db, VocabService vocab, VocabImporter 
         }
     }
 
+    /// <summary>
+    /// Speaks every word that has none. One paid call per word, so the count is worth knowing
+    /// first — the caller is expected to have said how many before asking.
+    /// </summary>
+    [HttpPost("words/audio/missing")]
+    public async Task<IActionResult> SpeakMissing(CancellationToken ct)
+    {
+        var words = await db.VocabWords.OrderBy(w => w.Characters).ToListAsync(ct);
+
+        var spoken = 0;
+        var alreadyHad = 0;
+        var failures = new List<object>();
+
+        // One at a time: each is a paid call, and a partial run that reports what it managed
+        // beats a parallel one that half-fails halfway through your credit.
+        foreach (var word in words)
+        {
+            if (tts.FileExists(word.AudioLocation))
+            {
+                alreadyHad++;
+                continue;
+            }
+
+            try
+            {
+                word.AudioLocation = await tts.SpeakFragmentAsync(word.Characters, ct);
+                await db.SaveChangesAsync(ct);
+                spoken++;
+            }
+            catch (Exception ex) when (ex is TtsException or HttpRequestException)
+            {
+                failures.Add(new { characters = word.Characters, message = ex.Message });
+            }
+        }
+
+        return Ok(new { spoken, alreadyHad, failures });
+    }
+
     [HttpGet("words/{id:int}/audio")]
     public async Task<IActionResult> Audio(int id, CancellationToken ct)
     {

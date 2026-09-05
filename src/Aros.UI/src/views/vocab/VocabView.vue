@@ -162,6 +162,14 @@
         <p class="card-note">
           ▶ speaks the word. The first time costs one synthesis, then it is cached for good —
           {{ spoken }} of {{ ready.length }} have audio.
+          <button
+            v-if="silent"
+            class="link-btn"
+            :disabled="speakingAll"
+            @click="speakMissing"
+          >
+            {{ speakingAll ? 'Speaking…' : `Speak the missing ${silent}` }}
+          </button>
         </p>
         <ul class="word-list">
           <li v-for="word in ready" :key="word.id">
@@ -216,6 +224,32 @@ const player = ref(null)
 const speaking = ref(0)
 
 const spoken = computed(() => ready.value.filter((w) => w.hasAudio).length)
+const silent = computed(() => ready.value.length - spoken.value)
+
+const speakingAll = ref(false)
+
+// Every missing word at once. It spends real credit, so the count is in the question.
+async function speakMissing() {
+  if (speakingAll.value) return
+  if (!window.confirm(`Speak ${silent.value} words? That is ${silent.value} synthesis calls.`)) return
+
+  speakingAll.value = true
+  error.value = ''
+
+  try {
+    const result = await api.post('/vocab/words/audio/missing')
+    await load()
+
+    if (result.failures.length) {
+      error.value = `${result.spoken} spoken, ${result.failures.length} failed: ` +
+        result.failures.map((f) => f.characters).join(' ')
+    }
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    speakingAll.value = false
+  }
+}
 
 // One paid synthesis the first time, cached from then on — so the button both buys and plays
 async function speak(word) {
@@ -717,6 +751,24 @@ h1 {
   border: none;
   border-radius: 6px;
   cursor: pointer;
+}
+
+.link-btn {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  color: #6d5bd0;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 0.35rem;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.link-btn:disabled {
+  color: #9ca3af;
+  cursor: default;
 }
 
 .speak {
