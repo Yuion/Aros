@@ -20,6 +20,8 @@ public class TutorController(
     CourseState courseState,
     CourseImporter courseImporter,
     LessonRecorder recorder,
+    TurnRunner runner,
+    LessonRuntimeService runtimeService,
     AiBudget budget,
     Microsoft.Extensions.Options.IOptions<AiOptions> options) : ControllerBase
 {
@@ -32,6 +34,12 @@ public class TutorController(
         var settings = await tutor.SettingsAsync(ct);
         var messages = await tutor.HistoryAsync(Math.Clamp(history, 1, 500), ct);
         var spend = await budget.StateAsync(ct);
+        var runtime = await runtimeService.CurrentAsync(ct);
+
+        // The exercise still on screen, if the learner has not answered it yet
+        var pending = runtime.ExerciseKey is { Length: > 0 } && runtime.AwaitingUserAnswer
+            ? await db.Exercises.AsNoTracking().FirstOrDefaultAsync(e => e.Key == runtime.ExerciseKey, ct)
+            : null;
 
         return Ok(new
         {
@@ -50,96 +58,36 @@ public class TutorController(
                 left = spend.TokensLeft,
                 requestsThisHour = spend.RequestsThisHour,
             },
+            runtime = Describe(runtime),
+            exercise = pending is null ? null : Describe(pending),
             messages = messages.Select(Describe),
         });
     }
 
-    /// <summary>The non-streamed send, and the fallback when streaming is unavailable.</summary>
+    /// <summary>
+    /// One turn. The reply is structured rather than free text, so the exercise arrives as data:
+    /// the application builds the character bank from the expected answers, gives the exercise an
+    /// identity, and refuses one it has set before.
+    /// </summary>
     [HttpPost("send")]
     public async Task<IActionResult> Send([FromBody] TutorMessageRequest request, CancellationToken ct)
     {
         try
         {
-            var turn = await tutor.SendAsync(request.Text, ct);
-            return Ok(new { question = Describe(turn.Question), answer = Describe(turn.Answer) });
+            var turn = await runner.RunAsync(request.Text, ct);
+
+            return Ok(new
+            {
+                question = Describe(turn.Question),
+                answer = Describe(turn.Answer),
+                exercise = turn.Exercise is null ? null : Describe(turn.Exercise),
+                warning = turn.Warning,
+            });
         }
         catch (AiException ex)
         {
             return BadRequest(new { message = ex.Message });
         }
-    }
-
-    /// <summary>
-    /// The streamed send. Server-sent events, written straight to the response — note that nginx
-    /// buffers proxied responses by default, so `proxy_buffering off` is needed on this route or
-    /// the whole "stream" lands in one piece at the end.
-    /// </summary>
-    [HttpPost("stream")]
-    public async Task Stream([FromBody] TutorMessageRequest request, CancellationToken ct)
-    {
-        Response.Headers.ContentType = "text/event-stream";
-        Response.Headers.CacheControl = "no-cache";
-        Response.Headers["X-Accel-Buffering"] = "no";        // asks nginx not to buffer, if it listens
-
-        ChatMessage question;
-
-        try
-        {
-            question = await tutor.BeginAsync(request.Text, ct);
-        }
-        catch (AiException ex)
-        {
-            await WriteAsync("error", new { message = ex.Message }, ct);
-            return;
-        }
-
-        await WriteAsync("question", Describe(question), ct);
-
-        var settings = await tutor.SettingsAsync(ct);
-        var instructions = await tutor.InstructionsAsync(ct);
-
-        var text = new StringBuilder();
-        var final = new AiChunk(null, null, null, true);
-        var started = Stopwatch.StartNew();
-        string? error = null;
-
-        try
-        {
-            await foreach (var chunk in tutor.StreamAsync(instructions, question.Content, settings.ConversationRef, ct))
-            {
-                if (chunk.Delta is { Length: > 0 } delta)
-                {
-                    text.Append(delta);
-                    await WriteAsync("delta", new { text = delta }, ct);
-                }
-
-                if (chunk.Done) final = chunk;
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            error = "Cancelled.";                            // the user pressed stop; keep what arrived
-        }
-        catch (Exception ex)
-        {
-            error = ex.Message;
-            await WriteAsync("error", new { message = ex.Message }, ct);
-        }
-
-        // Recorded even when it ended badly: a half-finished answer is still an answer
-        await tutor.CompleteAsync(question, text.ToString(), final, (int)started.ElapsedMilliseconds, error,
-            CancellationToken.None);
-
-        var spend = await budget.StateAsync(CancellationToken.None);
-
-        await WriteAsync("done", new
-        {
-            inputTokens = final.Usage?.InputTokens ?? 0,
-            outputTokens = final.Usage?.OutputTokens ?? 0,
-            latencyMs = (int)started.ElapsedMilliseconds,
-            budget = new { used = spend.TokensUsedToday, limit = spend.DailyTokenBudget, left = spend.TokensLeft },
-            error,
-        }, CancellationToken.None);
     }
 
     /// <summary>
@@ -233,14 +181,15 @@ public class TutorController(
     [HttpGet("context")]
     public async Task<IActionResult> Context(CancellationToken ct)
     {
-        var (standing, state) = await tutor.PartsAsync(ct);
-        var whole = TutorService.Join(standing, state);
+        var (standing, state, runtime) = await tutor.PartsAsync(ct);
+        var whole = TutorService.Join(standing, state, runtime);
 
         return Ok(new
         {
             instructions = whole,
             standing,
             state,
+            runtime,
             isDefault = standing.Trim() == TutorInstructions.Default.Trim(),
             characters = whole.Length,
             roughTokens = whole.Length / 3,                 // Chinese runs denser than English
@@ -330,6 +279,28 @@ public class TutorController(
 
         return NoContent();
     }
+
+    /// <summary>The exercise as the page needs it — never the expected answers.</summary>
+    private static object Describe(Data.Entities.Exercise exercise) => new
+    {
+        key = exercise.Key,
+        type = exercise.Type,
+        instructions = exercise.Instructions,
+        items = CharacterBank.Read(exercise.ItemsJson).Select(i => i.Prompt),
+        characterBank = exercise.CharacterBank,
+        answered = exercise.AnsweredAt is not null,
+    };
+
+    private static object Describe(LessonRuntime runtime) => new
+    {
+        lessonId = runtime.LessonId,
+        phase = runtime.Phase.ToString(),
+        exerciseKey = runtime.ExerciseKey,
+        awaitingUserAnswer = runtime.AwaitingUserAnswer,
+        exercisesSent = runtime.ExercisesSentThisLesson.Count,
+        newVocabulary = runtime.NewVocabularyThisLesson,
+        newGrammar = runtime.NewGrammarThisLesson,
+    };
 
     private static object Describe(TutorProposal proposal) => new
     {

@@ -1,6 +1,6 @@
 using System.Globalization;
-using System.Text.Json;
 using System.Text;
+using System.Text.Json;
 using Aros.Api.Data;
 using Aros.Api.Data.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -8,17 +8,19 @@ using Microsoft.EntityFrameworkCore;
 namespace Aros.Api.Tutor;
 
 /// <summary>
-/// Builds the block of text the tutor is given about the learner, read fresh from the database on
-/// every send. It is assembled, never stored: the trainers own vocabulary, sentences and progress,
-/// and a second copy would disagree with them within a week.
+/// What the model is told about the learner, read fresh from the database on every send. It is
+/// assembled, never stored: the trainers own vocabulary, sentences and progress, and a second copy
+/// would disagree with them within a week.
 ///
-/// The listing is budgeted. A pool of forty words is nothing; a pool of five hundred is ten
-/// thousand characters on every single message, so past a threshold the full list gives way to
-/// counts plus the parts that actually steer a lesson — the weak, the recent, the untouched.
+/// It is deliberately compact. An earlier version sent three full lesson summaries, every audio
+/// implementation detail and every resolved preference on every message — around 3,500 tokens in
+/// which the rules that matter were buried. What survives is what changes the next turn: what the
+/// learner knows, where they are weakest, what is being worked on, and how they want to be taught.
+/// The rest stays in the database, where it can be read when it is wanted.
 /// </summary>
 public class CourseState(AppDbContext db)
 {
-    /// <summary>Above this many words, the full vocabulary list stops being sent.</summary>
+    /// <summary>Above this many words, the inventory gives way to counts and the parts that steer.</summary>
     public const int FullListLimit = 250;
 
     public async Task<string> BuildAsync(CancellationToken ct)
@@ -32,139 +34,89 @@ public class CourseState(AppDbContext db)
             .OrderBy(w => w.CreatedAt)
             .ToListAsync(ct);
 
-        var sentences = await db.TtsClips.AsNoTracking().CountAsync(ct);
         var grammar = await db.GrammarPoints.AsNoTracking().OrderBy(g => g.IntroducedInLesson).ToListAsync(ct);
         var rules = await db.PronunciationRules.AsNoTracking().OrderBy(r => r.IntroducedInLesson).ToListAsync(ct);
         var weak = await db.WeakPoints.AsNoTracking().Where(w => !w.Resolved).ToListAsync(ct);
-        var lessons = await db.Lessons.AsNoTracking().OrderByDescending(l => l.Number).Take(3).ToListAsync(ct);
-
+        var lastLesson = await db.Lessons.AsNoTracking().OrderByDescending(l => l.Number).FirstOrDefaultAsync(ct);
         var review = await db.VocabWords.AsNoTracking().CountAsync(w => w.NeedsReview, ct);
 
         var text = new StringBuilder();
-        text.AppendLine($"CURRENT LEARNING STATE (schema v{settings?.SchemaVersion ?? 1}, {DateTime.Now:yyyy-MM-dd})");
+        text.AppendLine("CURRENT LEARNING STATE");
         text.AppendLine();
-        text.AppendLine($"Level: {settings?.Level ?? "beginner"}");
 
-        AppendVocabulary(text, words);
-        AppendDirections(text, words);
+        text.AppendLine("LEARNER");
+        text.AppendLine($"  {settings?.Level ?? "beginner"}. {words.Count} known vocabulary items.");
+        if (review > 0) text.AppendLine($"  {review} more await review and must not be used yet.");
+
+        AppendAccuracy(text, words);
+        AppendTargets(text, weak, rules);
 
         text.AppendLine();
-        text.AppendLine($"Listening library: {sentences} sentences, already carrying pinyin and English.");
-        if (review > 0)
-            text.AppendLine($"{review} words are waiting in the review queue and are NOT yet being tested.");
-
-        AppendList(text, "Grammar taught", grammar.Select(g => $"{g.Title} ({g.Status.ToString().ToLowerInvariant()})"));
-        AppendList(text, "Pronunciation rules taught", rules.Select(r => r.Title));
-        AppendList(text, "Open weak points", weak.Select(Describe));
-
-        if (lessons.Count > 0)
-        {
-            text.AppendLine();
-            text.AppendLine("Recent lessons:");
-            foreach (var lesson in lessons.OrderBy(l => l.Number))
-            {
-                text.AppendLine($"  {lesson.Number} ({lesson.Date:yyyy-MM-dd}): {lesson.Summary}");
-                if (lesson.NextRecommendedTopic.Length > 0)
-                    text.AppendLine($"     next suggested: {lesson.NextRecommendedTopic}");
-            }
-        }
+        text.AppendLine("CURRENT LESSON");
+        text.AppendLine($"  {Blank(settings?.CurrentLessonTopic, "not set")}");
+        if (settings?.NextRecommendedTopic is { Length: > 0 } next)
+            text.AppendLine($"  planned next: {next}");
+        if (lastLesson is not null)
+            text.AppendLine($"  last lesson ({lastLesson.Number}, {lastLesson.Date:yyyy-MM-dd}): {lastLesson.Summary}");
 
         AppendPreferences(text, settings?.PreferencesJson);
-
-        text.AppendLine();
-        if (settings?.CurrentLessonTopic is { Length: > 0 } current)
-            text.AppendLine($"Current lesson topic: {current}");
-        if (settings?.NextRecommendedTopic is { Length: > 0 } next)
-            text.AppendLine($"Next recommended topic: {next}");
+        AppendInventory(text, words, grammar, rules);
 
         return text.ToString().TrimEnd();
     }
 
-    private static void AppendVocabulary(StringBuilder text, List<VocabWord> words)
-    {
-        text.AppendLine();
-
-        if (words.Count == 0)
-        {
-            text.AppendLine("Vocabulary: none yet.");
-            return;
-        }
-
-        if (words.Count <= FullListLimit)
-        {
-            text.AppendLine($"Vocabulary the learner knows ({words.Count}) — use freely:");
-            text.AppendLine("  " + string.Join(" · ", words.Select(w => $"{w.Characters} {w.Pinyin} {w.English}")));
-            return;
-        }
-
-        // Too many to list. Send what changes a lesson: the shaky, the newest, the neglected.
-        var weakest = words
-            .Where(w => w.Progress.Sum(p => p.WrongCount) > 0)
-            .OrderByDescending(w => w.Progress.Sum(p => p.WrongCount))
-            .Take(40);
-
-        var newest = words.TakeLast(40);
-
-        text.AppendLine($"Vocabulary the learner knows: {words.Count} words — too many to list in full.");
-        text.AppendLine("  Most often missed: " + string.Join(" · ", weakest.Select(w => $"{w.Characters} {w.Pinyin}")));
-        text.AppendLine("  Most recently added: " + string.Join(" · ", newest.Select(w => $"{w.Characters} {w.Pinyin}")));
-        text.AppendLine("  Assume anything taught in an earlier lesson is known; ask if you need the full list.");
-    }
-
     /// <summary>
-    /// Which of the six directions is weakest, which is the one thing the trainers know that the
-    /// tutor cannot see. Recognition and production come apart, and a lesson should lean on the
-    /// side that is behind.
+    /// The one thing the trainers know that no conversation can: recognition and production come
+    /// apart, and a lesson should lean on whichever is behind.
     /// </summary>
-    private static void AppendDirections(StringBuilder text, List<VocabWord> words)
+    private static void AppendAccuracy(StringBuilder text, List<VocabWord> words)
     {
         var rows = words.SelectMany(w => w.Progress).ToList();
         if (rows.Count == 0) return;
 
-        var byDirection = Enum.GetValues<VocabDirection>()
+        var scored = Enum.GetValues<VocabDirection>()
             .Select(direction =>
             {
                 var forDirection = rows.Where(p => p.Direction == direction).ToList();
                 var answered = forDirection.Sum(p => p.CorrectCount + p.WrongCount);
 
                 return (Direction: direction, Answered: answered,
-                    Accuracy: answered == 0 ? (double?)null : (double)forDirection.Sum(p => p.CorrectCount) / answered);
+                    Accuracy: answered == 0 ? 0d : (double)forDirection.Sum(p => p.CorrectCount) / answered);
             })
             .Where(d => d.Answered > 0)
             .OrderBy(d => d.Accuracy)
             .ToList();
 
-        if (byDirection.Count == 0) return;
+        if (scored.Count == 0) return;
 
         text.AppendLine();
-        text.AppendLine("Accuracy by direction in the trainer (weakest first):");
-        foreach (var (direction, answered, accuracy) in byDirection)
-            // Written out rather than :P0 — every culture's percent pattern has its own spacing,
-            // and the server runs under whatever the machine is set to.
-            text.AppendLine(string.Create(CultureInfo.InvariantCulture,
-                $"  {Label(direction)}: {accuracy * 100:0}% of {answered}"));
+        text.AppendLine("WEAKEST IN THE TRAINER");
+        foreach (var row in scored.Take(2)) text.AppendLine("  " + Line(row.Direction, row.Accuracy, row.Answered));
+
+        text.AppendLine("STRONGEST");
+        foreach (var row in scored.TakeLast(2).Reverse())
+            text.AppendLine("  " + Line(row.Direction, row.Accuracy, row.Answered));
     }
 
-    private static string Label(VocabDirection direction) => direction switch
-    {
-        VocabDirection.CharactersToPinyin => "characters → pinyin",
-        VocabDirection.CharactersToEnglish => "characters → English",
-        VocabDirection.PinyinToEnglish => "pinyin → English",
-        VocabDirection.EnglishToPinyin => "English → pinyin",
-        VocabDirection.PinyinToCharacters => "pinyin → characters",
-        _ => "English → characters",
-    };
+    private static string Line(VocabDirection direction, double accuracy, int answered) =>
+        string.Create(CultureInfo.InvariantCulture, $"{Label(direction)}: {accuracy * 100:0}% of {answered}");
 
-    private static string Describe(WeakPoint weak) =>
-        $"{weak.Target} ({weak.Type}" +
-        (weak.Expected.Length > 0 ? $", expected {weak.Expected}" : "") +
-        $", severity {weak.Severity}, since {weak.FirstSeen:yyyy-MM-dd})";
+    private static void AppendTargets(StringBuilder text, List<WeakPoint> weak, List<PronunciationRule> rules)
+    {
+        var newest = rules.OrderByDescending(r => r.IntroducedInLesson ?? 0).Take(2).Select(r => r.Title);
+        var targets = weak.Select(w => w.Target).Concat(newest).Distinct().ToList();
+
+        if (targets.Count == 0) return;
+
+        text.AppendLine();
+        text.AppendLine("CURRENT TARGETS");
+        foreach (var target in targets) text.AppendLine($"  {target}");
+    }
 
     /// <summary>
-    /// The imported preferences, flattened into readable lines rather than sent as raw JSON —
-    /// cheaper in tokens and easier for a model to follow. They are the learner's own words about
-    /// how they want to be taught, so they go in every message; a preference nobody sends is just
-    /// a note to oneself.
+    /// Preferences as written. Anything the standing instructions already say is worth deleting
+    /// from the file rather than sending twice — a rule repeated is not followed twice, it just
+    /// crowds out the rest.
     /// </summary>
     private static void AppendPreferences(StringBuilder text, string? json)
     {
@@ -177,7 +129,7 @@ public class CourseState(AppDbContext db)
         }
         catch (JsonException)
         {
-            return;                              // stored as written; unreadable means simply unsent
+            return;
         }
 
         if (root.ValueKind != JsonValueKind.Object) return;
@@ -187,16 +139,54 @@ public class CourseState(AppDbContext db)
         if (lines.Count == 0) return;
 
         text.AppendLine();
-        text.AppendLine("Teaching preferences (the learner's own, follow them):");
+        text.AppendLine("TEACHING PREFERENCES");
         foreach (var line in lines) text.AppendLine("  " + line);
+    }
+
+    private static void AppendInventory(
+        StringBuilder text, List<VocabWord> words, List<GrammarPoint> grammar, List<PronunciationRule> rules)
+    {
+        text.AppendLine();
+        text.AppendLine("KNOWN VOCABULARY — use freely, and only these");
+
+        if (words.Count == 0)
+        {
+            text.AppendLine("  none yet");
+        }
+        else if (words.Count <= FullListLimit)
+        {
+            text.AppendLine("  " + string.Join(" · ", words.Select(w => $"{w.Characters} {w.Pinyin} {w.English}")));
+        }
+        else
+        {
+            var missed = words.Where(w => w.Progress.Sum(p => p.WrongCount) > 0)
+                .OrderByDescending(w => w.Progress.Sum(p => p.WrongCount)).Take(40);
+
+            text.AppendLine($"  {words.Count} words, too many to list.");
+            text.AppendLine("  most missed: " + string.Join(" · ", missed.Select(w => $"{w.Characters} {w.Pinyin}")));
+            text.AppendLine("  newest: " + string.Join(" · ", words.TakeLast(40).Select(w => $"{w.Characters} {w.Pinyin}")));
+        }
+
+        if (grammar.Count > 0)
+        {
+            text.AppendLine();
+            text.AppendLine("KNOWN GRAMMAR");
+            text.AppendLine("  " + string.Join(" · ", grammar.Select(g => g.Title)));
+        }
+
+        if (rules.Count > 0)
+        {
+            text.AppendLine();
+            text.AppendLine("PRONUNCIATION RULES TAUGHT");
+            text.AppendLine("  " + string.Join(" · ", rules.Select(r => r.Title)));
+        }
     }
 
     private static void Flatten(JsonElement element, string prefix, List<string> lines)
     {
         foreach (var property in element.EnumerateObject())
         {
-            // A leading underscore marks a note to whoever edits the file. Sending it would turn
-            // an aside for the reader into an instruction for the model.
+            // A leading underscore marks a note to whoever edits the file, not an instruction
             if (property.Name.StartsWith('_')) continue;
 
             var name = prefix.Length == 0 ? property.Name : $"{prefix}.{property.Name}";
@@ -218,19 +208,21 @@ public class CourseState(AppDbContext db)
                     break;
 
                 default:
-                    lines.Add($"{name}: {property.Value.ToString()}");
+                    lines.Add($"{name}: {property.Value}");
                     break;
             }
         }
     }
 
-    private static void AppendList(StringBuilder text, string heading, IEnumerable<string> items)
-    {
-        var list = items.ToList();
-        if (list.Count == 0) return;
+    private static string Blank(string? value, string fallback) => value is { Length: > 0 } ? value : fallback;
 
-        text.AppendLine();
-        text.AppendLine($"{heading} ({list.Count}):");
-        text.AppendLine("  " + string.Join(" · ", list));
-    }
+    private static string Label(VocabDirection direction) => direction switch
+    {
+        VocabDirection.CharactersToPinyin => "characters -> pinyin",
+        VocabDirection.CharactersToEnglish => "characters -> English",
+        VocabDirection.PinyinToEnglish => "pinyin -> English",
+        VocabDirection.EnglishToPinyin => "English -> pinyin",
+        VocabDirection.PinyinToCharacters => "pinyin -> characters",
+        _ => "English -> characters",
+    };
 }

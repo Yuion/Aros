@@ -20,6 +20,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<WeakPoint> WeakPoints => Set<WeakPoint>();
     public DbSet<Lesson> Lessons => Set<Lesson>();
     public DbSet<TutorProposal> TutorProposals => Set<TutorProposal>();
+    public DbSet<LessonRuntime> LessonRuntime => Set<LessonRuntime>();
+    public DbSet<Exercise> Exercises => Set<Exercise>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -57,6 +59,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<GrammarPoint>(entity => entity.HasIndex(g => g.Key).IsUnique());
         modelBuilder.Entity<PronunciationRule>(entity => entity.HasIndex(r => r.Key).IsUnique());
         modelBuilder.Entity<Lesson>(entity => entity.HasIndex(l => l.Number).IsUnique());
+
+        modelBuilder.Entity<Exercise>(entity =>
+        {
+            entity.HasIndex(e => e.Key).IsUnique();
+            entity.HasIndex(e => e.Fingerprint);          // duplicate detection reads this
+        });
 
         // The chat is read newest-last for the page and summed per day for the budget
         modelBuilder.Entity<ChatMessage>(entity => entity.HasIndex(m => m.CreatedAt));

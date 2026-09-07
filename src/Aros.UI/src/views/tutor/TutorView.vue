@@ -80,7 +80,7 @@
     </section>
 
     <div ref="scroller" class="thread">
-      <p v-if="!messages.length && !streaming" class="placeholder">
+      <p v-if="!messages.length && !busy" class="placeholder">
         Nothing yet. The tutor knows what is in your trainers — ask it to carry on the course.
       </p>
 
@@ -113,13 +113,31 @@
         </div>
       </article>
 
-      <article v-if="streaming" class="turn assistant">
-        <div class="bubble assistant">
-          <div class="md" v-html="render(streaming)" />
-          <span class="cursor" />
+      <article v-if="busy" class="turn assistant">
+        <div class="bubble assistant thinking">
+          <span class="cursor" /> {{ ending ? 'Writing up the lesson…' : 'Thinking…' }}
         </div>
       </article>
     </div>
+
+    <!-- Built here, not by the model: every character the answers need is in the bank -->
+    <section v-if="exercise" class="card exercise">
+      <header class="card-head">
+        <h2>{{ exercise.instructions || 'Exercise' }}</h2>
+        <span class="card-note">{{ exercise.key }}</span>
+      </header>
+
+      <ol class="exercise-items">
+        <li v-for="(item, i) in exercise.items" :key="i" lang="zh">{{ item }}</li>
+      </ol>
+
+      <template v-if="exercise.characterBank.length">
+        <p class="card-note">Character reference — some are not needed.</p>
+        <ul class="bank">
+          <li v-for="(c, i) in exercise.characterBank" :key="i" lang="zh">{{ c }}</li>
+        </ul>
+      </template>
+    </section>
 
     <p v-if="importReport" class="notice done">{{ importReport }}</p>
 
@@ -134,7 +152,6 @@
       />
       <div class="composer-row">
         <button v-if="!busy" type="submit" class="primary" :disabled="!text.trim()">Send</button>
-        <button v-else type="button" class="primary stop" @click="cancel">Stop</button>
         <span class="hint">Ctrl+Enter</span>
         <button v-if="lastFailed" type="button" class="ghost" @click="retry">Retry</button>
       </div>
@@ -143,14 +160,14 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { api } from '@/services/api'
 import { render, findTables } from '@/services/markdown'
 
 const state = ref(null)
 const messages = ref([])
 const text = ref('')
-const streaming = ref('')
+const exercise = ref(null)
 const busy = ref(false)
 const error = ref('')
 const context = ref(null)
@@ -161,8 +178,6 @@ const courseFile = ref(null)
 const proposals = ref([])
 const ending = ref(false)
 const standing = ref('')
-
-let controller = null
 
 const budgetTight = computed(() => {
   const b = state.value?.budget
@@ -179,6 +194,7 @@ async function load() {
     const [next, pending] = await Promise.all([api.get('/tutor'), api.get('/tutor/proposals')])
     state.value = next
     messages.value = next.messages
+    exercise.value = next.exercise
     proposals.value = pending
     await toBottom()
   } catch (e) {
@@ -208,74 +224,30 @@ async function retry() {
 }
 
 /**
- * Streamed over server-sent events. Read with fetch rather than EventSource, which only does GET —
- * the message has to go in a body.
+ * One turn. The reply comes back whole rather than streamed: it is structured, so the exercise
+ * arrives as data the application can check and render. Losing the typing effect is the price of
+ * a character bank that cannot be missing a character.
  */
 async function ask(message) {
   busy.value = true
   error.value = ''
   importReport.value = ''
-  streaming.value = ''
-  controller = new AbortController()
 
   try {
-    const response = await fetch(`${api.base}/tutor/stream`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text: message }),
-      signal: controller.signal,
-    })
+    const turn = await api.post('/tutor/send', { text: message })
 
-    if (!response.ok || !response.body) throw new Error(`The tutor could not be reached (${response.status}).`)
+    messages.value.push(turn.question, turn.answer)
+    exercise.value = turn.exercise
+    if (turn.warning) importReport.value = turn.warning
 
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-
-      buffer += decoder.decode(value, { stream: true })
-
-      // Events are separated by a blank line; anything after the last one is a partial event
-      const events = buffer.split('\n\n')
-      buffer = events.pop() ?? ''
-
-      for (const event of events) handle(event)
-      await toBottom()
-    }
-  } catch (e) {
-    if (e.name !== 'AbortError') error.value = e.message
-  } finally {
-    controller = null
-    busy.value = false
-    streaming.value = ''
     await load()
+  } catch (e) {
+    error.value = e.message
+    await load()
+  } finally {
+    busy.value = false
     field.value?.focus()
   }
-}
-
-function handle(raw) {
-  const type = raw.match(/^event: (.*)$/m)?.[1]
-  const data = raw.match(/^data: (.*)$/m)?.[1]
-  if (!type || !data) return
-
-  let payload
-  try {
-    payload = JSON.parse(data)
-  } catch {
-    return
-  }
-
-  if (type === 'question') messages.value.push(payload)
-  else if (type === 'delta') streaming.value += payload.text
-  else if (type === 'error') error.value = payload.message
-  else if (type === 'done' && payload.error) error.value = payload.error
-}
-
-function cancel() {
-  controller?.abort()
 }
 
 function tablesIn(message) {
@@ -505,7 +477,7 @@ async function resetInstructions() {
 }
 
 onMounted(load)
-onUnmounted(() => controller?.abort())
+
 </script>
 
 <style scoped>
@@ -686,6 +658,37 @@ h1 {
 .context {
   max-height: 40vh;
   overflow-y: auto;
+}
+
+.exercise {
+  border-color: #ddd6fe;
+  background: #faf9ff;
+}
+
+.exercise-items {
+  margin: 0.5rem 0 0.8rem 1.2rem;
+  font-size: 1.05rem;
+  line-height: 1.9;
+}
+
+.bank {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.bank li {
+  padding: 0.3rem 0.6rem;
+  font-size: 1.25rem;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.thinking {
+  color: #9ca3af;
+  font-size: 0.88rem;
 }
 
 .proposal {

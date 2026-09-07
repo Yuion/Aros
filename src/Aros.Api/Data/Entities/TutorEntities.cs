@@ -153,3 +153,67 @@ public class TutorProposal
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? DecidedAt { get; set; }
 }
+
+public enum LessonPhase { Idle = 0, Input = 1, Exercise = 2, Grading = 3, Reinforcement = 4 }
+
+/// <summary>
+/// What the tutor is doing *right now*, as opposed to what the learner knows. The course state
+/// answers "who is this learner"; this answers "what am I in the middle of".
+///
+/// It exists because prompting alone cannot settle it. After a long thread, "1. 我想喝茶" is
+/// ambiguous between an answer to be graded and a request to carry on — and a model has to guess.
+/// Held here, the guess is replaced by a fact.
+/// </summary>
+public class LessonRuntime
+{
+    public int Id { get; set; }                            // always 1
+
+    public string LessonId { get; set; } = "";             // 2026-09-08-01
+    public LessonPhase Phase { get; set; }
+    public string CurrentTopic { get; set; } = "";
+
+    /// <summary>The exercise on screen, if one is.</summary>
+    public string? ExerciseKey { get; set; }
+    public bool ExerciseAlreadySent { get; set; }
+    public bool AwaitingUserAnswer { get; set; }
+
+    /// <summary>Set the moment the learner replies to a pending exercise; cleared once graded.</summary>
+    public string? AnsweringExerciseKey { get; set; }
+    public string? LastCompletedExerciseKey { get; set; }
+
+    public List<string> ExercisesSentThisLesson { get; set; } = [];
+    public List<string> NewVocabularyThisLesson { get; set; } = [];
+    public List<string> NewGrammarThisLesson { get; set; } = [];
+
+    public int? MinutesRequested { get; set; }
+    public DateTime? StartedAt { get; set; }
+}
+
+/// <summary>
+/// One exercise as the application owns it. The model supplies the items and the answer it has in
+/// mind; everything mechanical is derived here — the character bank, the identity, the check that
+/// this is not the last exercise again.
+/// </summary>
+public class Exercise
+{
+    public int Id { get; set; }
+    public string Key { get; set; } = "";                  // L11-E03, unique
+    public string LessonId { get; set; } = "";
+    public string Type { get; set; } = "";                 // english_to_chinese, and so on
+    public string Instructions { get; set; } = "";
+
+    /// <summary>[{ prompt, expectedAnswer }] — the answers are never sent to the page.</summary>
+    public string ItemsJson { get; set; } = "[]";
+
+    /// <summary>
+    /// The item set, normalised and sorted. Two exercises with the same fingerprint are the same
+    /// exercise however differently they were worded.
+    /// </summary>
+    public string Fingerprint { get; set; } = "";
+
+    /// <summary>Derived from the expected answers, so a required character cannot go missing.</summary>
+    public List<string> CharacterBank { get; set; } = [];
+
+    public DateTime SentAt { get; set; } = DateTime.UtcNow;
+    public DateTime? AnsweredAt { get; set; }
+}
