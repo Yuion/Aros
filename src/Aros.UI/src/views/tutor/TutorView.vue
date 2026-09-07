@@ -32,8 +32,36 @@
         <h2>What the tutor is told</h2>
         <button class="ghost" @click="context = null">Close</button>
       </header>
-      <p class="card-note">{{ context.characters.toLocaleString() }} characters, roughly {{ context.roughTokens.toLocaleString() }} tokens, sent with every message.</p>
-      <pre class="context-body">{{ context.instructions }}</pre>
+      <p class="card-note">
+        {{ context.characters.toLocaleString() }} characters, roughly
+        {{ context.roughTokens.toLocaleString() }} tokens, sent with every message.
+      </p>
+
+      <!-- Written by hand, and the only half worth editing -->
+      <h3 class="part-head">
+        Standing instructions
+        <span v-if="!context.isDefault" class="edited">edited</span>
+      </h3>
+      <p class="card-note">
+        How the tutor should teach. Yours to change; saved to the database, so it takes effect on
+        the next message with no restart.
+      </p>
+      <textarea v-model="standing" class="context-edit" rows="14" spellcheck="false" />
+      <div class="proposal-actions">
+        <button class="primary" :disabled="busy || standing === context.standing" @click="saveInstructions">
+          Save instructions
+        </button>
+        <button class="ghost" :disabled="busy" @click="resetInstructions">Restore the built-in text</button>
+      </div>
+
+      <!-- Assembled from the database; typing here would be typing on a mirror -->
+      <h3 class="part-head">Learning state — read from your database</h3>
+      <p class="card-note">
+        Vocabulary and accuracy come from the trainers. Grammar, rules, weak points, lessons and
+        preferences come from the course file and from approved lesson write-ups. Change those at
+        the source, not here.
+      </p>
+      <pre class="context-body">{{ context.state }}</pre>
     </section>
 
     <!-- Written by the tutor, applied only when you say so -->
@@ -132,6 +160,7 @@ const field = ref(null)
 const courseFile = ref(null)
 const proposals = ref([])
 const ending = ref(false)
+const standing = ref('')
 
 let controller = null
 
@@ -428,10 +457,50 @@ async function newConversation() {
 }
 
 async function showContext() {
+  if (context.value) {
+    context.value = null
+    return
+  }
+
   try {
-    context.value = context.value ? null : await api.get('/tutor/context')
+    context.value = await api.get('/tutor/context')
+    standing.value = context.value.standing
   } catch (e) {
     error.value = e.message
+  }
+}
+
+async function saveInstructions() {
+  busy.value = true
+  error.value = ''
+
+  try {
+    const r = await api.put('/tutor/instructions', { text: standing.value })
+    context.value = { ...context.value, standing: r.standing, isDefault: r.isDefault }
+    standing.value = r.standing
+    importReport.value = 'Instructions saved. They apply from your next message.'
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    busy.value = false
+  }
+}
+
+async function resetInstructions() {
+  if (!window.confirm('Replace your instructions with the built-in text? Your edits are lost.')) return
+
+  busy.value = true
+
+  try {
+    // An empty body is the reset: the server owns what "default" means
+    const r = await api.put('/tutor/instructions', { text: '' })
+    context.value = { ...context.value, standing: r.standing, isDefault: r.isDefault }
+    standing.value = r.standing
+    importReport.value = 'Restored the built-in instructions.'
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    busy.value = false
   }
 }
 
@@ -662,6 +731,43 @@ h1 {
   font-size: 0.78rem;
   color: #6b7280;
   margin: 0.3rem 0 0.6rem;
+}
+
+.part-head {
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-top: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.edited {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #6d5bd0;
+  background: #ede9fe;
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+}
+
+.context-edit {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.76rem;
+  line-height: 1.55;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  color: #1a1a1a;
+  resize: vertical;
+  margin-bottom: 0.6rem;
+}
+
+.context-edit:focus {
+  outline: none;
+  border-color: #cba6f7;
 }
 
 .context-body {

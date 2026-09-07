@@ -36,10 +36,37 @@ public class TutorService(
     /// <summary>What is actually sent: the standing instructions, then the live state.</summary>
     public async Task<string> InstructionsAsync(CancellationToken ct)
     {
+        var (standing, state) = await PartsAsync(ct);
+        return Join(standing, state);
+    }
+
+    /// <summary>
+    /// The same payload, kept apart. One half is written by hand and yours to edit; the other is
+    /// read from the trainers and the course tables and cannot be typed over. Showing them as one
+    /// block hides which is which, and only one of them is worth editing.
+    /// </summary>
+    public async Task<(string Standing, string State)> PartsAsync(CancellationToken ct)
+    {
         var settings = await SettingsAsync(ct);
         var state = await courseState.BuildAsync(ct);
 
-        return $"{settings.Instructions}\n\n---\n\n{state}";
+        return (settings.Instructions, state);
+    }
+
+    public static string Join(string standing, string state) =>
+        string.Join("\n\n---\n\n", standing, state);
+
+    /// <summary>Rewrites the standing instructions. Empty restores the built-in text.</summary>
+    public async Task<string> SetInstructionsAsync(string? text, CancellationToken ct)
+    {
+        var settings = await SettingsAsync(ct);
+
+        settings.Instructions = text?.Trim() is { Length: > 0 } written
+            ? written
+            : TutorInstructions.Default;
+
+        await db.SaveChangesAsync(ct);
+        return settings.Instructions;
     }
 
     public async Task<TutorTurn> SendAsync(string? text, CancellationToken ct)

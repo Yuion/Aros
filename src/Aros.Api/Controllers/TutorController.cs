@@ -225,19 +225,45 @@ public class TutorController(
     public async Task<IActionResult> NewConversation(CancellationToken ct) =>
         Ok(new { cleared = await tutor.NewConversationAsync(ct) });
 
-    /// <summary>The exact text the model is given about the learner. The first thing to go wrong.</summary>
+    /// <summary>
+    /// The exact text the model is given, in its two halves: the standing instructions, which are
+    /// yours to edit, and the state, which is read from the database and cannot be typed over.
+    /// The first thing to go wrong is usually in here.
+    /// </summary>
     [HttpGet("context")]
     public async Task<IActionResult> Context(CancellationToken ct)
     {
-        var instructions = await tutor.InstructionsAsync(ct);
+        var (standing, state) = await tutor.PartsAsync(ct);
+        var whole = TutorService.Join(standing, state);
 
         return Ok(new
         {
-            instructions,
-            characters = instructions.Length,
-            roughTokens = instructions.Length / 3,          // Chinese runs denser than English
+            instructions = whole,
+            standing,
+            state,
+            isDefault = standing.Trim() == TutorInstructions.Default.Trim(),
+            characters = whole.Length,
+            roughTokens = whole.Length / 3,                 // Chinese runs denser than English
         });
     }
+
+    /// <summary>Rewrite the standing instructions. An empty body restores the built-in text.</summary>
+    [HttpPut("instructions")]
+    public async Task<IActionResult> SetInstructions(
+        [FromBody] TutorMessageRequest request, CancellationToken ct)
+    {
+        var saved = await tutor.SetInstructionsAsync(request.Text, ct);
+
+        return Ok(new
+        {
+            standing = saved,
+            isDefault = saved.Trim() == TutorInstructions.Default.Trim(),
+        });
+    }
+
+    /// <summary>The built-in text, for comparing against or reverting to.</summary>
+    [HttpGet("instructions/default")]
+    public IActionResult DefaultInstructions() => Ok(new { standing = TutorInstructions.Default });
 
     /// <summary>The exact schema the lesson write-up is held to. Useful when a write-up is refused.</summary>
     [HttpGet("lesson/schema")]
