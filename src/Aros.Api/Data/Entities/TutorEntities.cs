@@ -48,6 +48,12 @@ public class ChatMessage
     public int OutputTokens { get; set; }
     public int LatencyMs { get; set; }
 
+    /// <summary>
+    /// Cleared from view by starting a new thread. The row stays because the day's spending is
+    /// counted from it: deleting the chat would reset the budget along with it.
+    /// </summary>
+    public bool Hidden { get; set; }
+
     /// <summary>A question that never got an answer. Kept so the typed text is never lost.</summary>
     public bool Failed { get; set; }
     public string? ErrorMessage { get; set; }

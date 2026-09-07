@@ -393,10 +393,21 @@ function pretty(payload) {
 }
 
 async function newConversation() {
-  if (!window.confirm('Start a new thread? Everything learned stays; only the running conversation is forgotten.')) return
+  if (
+    !window.confirm(
+      'Clear the conversation and start fresh?
+
+' +
+        'The chat is wiped and the tutor forgets the thread. Everything learned stays — lessons, ' +
+        'grammar, weak points, vocabulary and every score live elsewhere.',
+    )
+  ) {
+    return
+  }
 
   try {
-    await api.post('/tutor/conversation/new')
+    const r = await api.post('/tutor/conversation/new')
+    importReport.value = r.cleared ? `Cleared ${r.cleared} messages. Fresh thread.` : 'Fresh thread.'
     await load()
   } catch (e) {
     error.value = e.message

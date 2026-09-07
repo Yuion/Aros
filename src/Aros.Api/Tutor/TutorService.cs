@@ -150,17 +150,28 @@ public class TutorService(
         settings.LastUsedAt = DateTime.UtcNow;
     }
 
-    /// <summary>Forget the thread, keep everything that was learned from it.</summary>
-    public async Task NewConversationAsync(CancellationToken ct)
+    /// <summary>
+    /// Start again: the chat is cleared from view and OpenAI's thread is forgotten. Everything
+    /// learned stays — lessons, grammar, weak points, vocabulary and every score are in their own
+    /// tables and were never part of the conversation.
+    /// </summary>
+    public async Task<int> NewConversationAsync(CancellationToken ct)
     {
         var settings = await SettingsAsync(ct);
         settings.ConversationRef = null;
         settings.ConversationStartedAt = null;
+
+        var cleared = await db.ChatMessages
+            .Where(m => !m.Hidden)
+            .ExecuteUpdateAsync(m => m.SetProperty(x => x.Hidden, true), ct);
+
         await db.SaveChangesAsync(ct);
+        return cleared;
     }
 
     public Task<List<ChatMessage>> HistoryAsync(int take, CancellationToken ct) =>
         db.ChatMessages
+            .Where(m => !m.Hidden)
             .AsNoTracking()
             .OrderByDescending(m => m.Id)
             .Take(take)

@@ -220,13 +220,10 @@ public class TutorController(
         return NoContent();
     }
 
-    /// <summary>Forget the thread; everything learned from it stays.</summary>
+    /// <summary>Clears the chat and forgets OpenAI's thread. Everything learned stays.</summary>
     [HttpPost("conversation/new")]
-    public async Task<IActionResult> NewConversation(CancellationToken ct)
-    {
-        await tutor.NewConversationAsync(ct);
-        return NoContent();
-    }
+    public async Task<IActionResult> NewConversation(CancellationToken ct) =>
+        Ok(new { cleared = await tutor.NewConversationAsync(ct) });
 
     /// <summary>The exact text the model is given about the learner. The first thing to go wrong.</summary>
     [HttpGet("context")]

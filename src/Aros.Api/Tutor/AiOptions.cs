@@ -19,7 +19,12 @@ public class AiOptions
 
     public string BaseUrl { get; set; } = "https://api.openai.com/v1/";
 
-    public int MaxOutputTokens { get; set; } = 4000;
+    /// <summary>
+    /// Covers reasoning as well as the answer on models that think before replying, so it needs to
+    /// be well above the length of the reply you expect. Too low fails as "incomplete" with nothing
+    /// written at all.
+    /// </summary>
+    public int MaxOutputTokens { get; set; } = 16000;
 
     // The service is closed, so nobody else can spend this. These bound a *bug* — a retry storm,
     // a loop in a component — which does not care that the port is shut.

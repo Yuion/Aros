@@ -133,17 +133,34 @@ public class OpenAiClient(HttpClient http, IOptions<AiOptions> options, ILogger<
 
                 case "response.created":
                 case "response.completed":
-                case "response.incomplete":
                     responseId = node?["response"]?["id"]?.GetValue<string>() ?? responseId;
                     usage = ReadUsage(node?["response"]?["usage"]) ?? usage;
                     break;
 
+                // Ran out of room rather than failed. Usually the output budget went on reasoning
+                // before any text was produced, which is silent unless it is said out loud.
+                case "response.incomplete":
+                    responseId = node?["response"]?["id"]?.GetValue<string>() ?? responseId;
+                    usage = ReadUsage(node?["response"]?["usage"]) ?? usage;
+
+                    var why = node?["response"]?["incomplete_details"]?["reason"]?.GetValue<string>();
+                    logger.LogWarning("Response incomplete ({Reason}). Raw: {Raw}", why, Trim(payload));
+
+                    if (why == "max_output_tokens")
+                        throw new AiException(
+                            $"The model used its whole output allowance ({_options.MaxOutputTokens} tokens) " +
+                            "before finishing. Raise Ai:MaxOutputTokens — a reasoning model spends part of " +
+                            "it thinking, so it needs considerably more than the answer alone.");
+
+                    if (why is { Length: > 0 })
+                        throw new AiException($"The model stopped early: {why}.");
+                    break;
+
                 case "error":
                 case "response.failed":
-                    throw new AiException(
-                        node?["message"]?.GetValue<string>()
-                        ?? node?["response"]?["error"]?["message"]?.GetValue<string>()
-                        ?? "The model stopped without finishing.");
+                    // Logged whole, because the useful part is wherever it happens to be
+                    logger.LogError("Stream failed. Raw event: {Raw}", Trim(payload));
+                    throw new AiException(Explain(node));
             }
         }
 
@@ -236,6 +253,29 @@ public class OpenAiClient(HttpClient http, IOptions<AiOptions> options, ILogger<
 
         return text.ToString();
     }
+
+    /// <summary>
+    /// The message, from wherever this particular failure keeps it. A fallback that says only
+    /// "something went wrong" sends you to the logs, so the type and code go in the text too.
+    /// </summary>
+    private static string Explain(JsonNode? node)
+    {
+        var error = node?["error"] ?? node?["response"]?["error"];
+
+        var message = error?["message"]?.GetValue<string>()
+            ?? node?["message"]?.GetValue<string>();
+
+        if (message is { Length: > 0 }) return message;
+
+        var code = error?["code"]?.GetValue<string>()
+            ?? node?["code"]?.GetValue<string>()
+            ?? node?["type"]?.GetValue<string>()
+            ?? "no detail";
+
+        return $"The model stopped without finishing ({code}). The full event is in the API log.";
+    }
+
+    private static string Trim(string text) => text.Length > 800 ? text[..800] + "…" : text;
 
     private static AiUsage? ReadUsage(JsonNode? usage) =>
         usage is null
