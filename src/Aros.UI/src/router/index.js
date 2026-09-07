@@ -7,6 +7,12 @@ const routes = [
     component: () => import('@/views/HomeView.vue'),
   },
   {
+    path: '/tutor',
+    name: 'tutor',
+    component: () => import('@/views/tutor/TutorView.vue'),
+    meta: { nav: true, label: 'Tutor', icon: '🧑‍🏫' },
+  },
+  {
     path: '/vocab',
     name: 'vocab',
     component: () => import('@/views/vocab/VocabView.vue'),

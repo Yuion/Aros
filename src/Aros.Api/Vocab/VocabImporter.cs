@@ -29,12 +29,17 @@ public record VocabImportResult(
 public class VocabImporter(AppDbContext db)
 {
     public Task<VocabImportResult> PreviewAsync(string? text, CancellationToken ct) =>
-        RunAsync(text, apply: false, ct);
+        RunAsync(text, apply: false, needsReview: false, ct);
 
-    public Task<VocabImportResult> ImportAsync(string? text, CancellationToken ct) =>
-        RunAsync(text, apply: true, ct);
+    /// <param name="needsReview">
+    /// False when you typed the table out — writing it is the review. True for anything a model
+    /// produced: a plausible-looking wrong tone is exactly what it gets wrong, and once drilled in
+    /// it is learned wrong. The queue already exists and already holds flagged words out of tests.
+    /// </param>
+    public Task<VocabImportResult> ImportAsync(string? text, CancellationToken ct, bool needsReview = false) =>
+        RunAsync(text, apply: true, needsReview, ct);
 
-    private async Task<VocabImportResult> RunAsync(string? text, bool apply, CancellationToken ct)
+    private async Task<VocabImportResult> RunAsync(string? text, bool apply, bool needsReview, CancellationToken ct)
     {
         var rows = TableDump.Parse(text);
 
@@ -62,13 +67,13 @@ public class VocabImporter(AppDbContext db)
             if (!byCharacters.TryGetValue(characters, out var existing))
             {
                 added++;
-                if (apply) Add(byCharacters, characters, pinyin, english);
+                if (apply) Add(byCharacters, characters, pinyin, english, needsReview);
                 continue;
             }
 
             if (existing.FirstOrDefault(w => Normalize(w.Pinyin) == pinyin) is { } match)
             {
-                if (match.English == english && !match.NeedsReview)
+                if (match.English == english && match.NeedsReview == needsReview)
                 {
                     unchanged++;
                     continue;
@@ -79,7 +84,7 @@ public class VocabImporter(AppDbContext db)
                 {
                     match.Pinyin = pinyin;
                     match.English = english;
-                    match.NeedsReview = false;   // typed by hand is the review
+                    match.NeedsReview = needsReview;
                     match.ReadingAlternatives = null;
                 }
 
@@ -94,14 +99,15 @@ public class VocabImporter(AppDbContext db)
         return new VocabImportResult(rows.Count, added, updated, unchanged, skipped, conflicts);
     }
 
-    private void Add(Dictionary<string, List<VocabWord>> index, string characters, string pinyin, string english)
+    private void Add(
+        Dictionary<string, List<VocabWord>> index, string characters, string pinyin, string english, bool needsReview)
     {
         var word = new VocabWord
         {
             Characters = characters,
             Pinyin = pinyin,
             English = english,
-            NeedsReview = false,
+            NeedsReview = needsReview,
         };
 
         db.VocabWords.Add(word);

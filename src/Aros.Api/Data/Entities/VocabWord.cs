@@ -32,6 +32,15 @@ public class VocabWord
     /// </summary>
     public string AudioLocation { get; set; } = "";
 
+    /// <summary>Which tutor lesson brought this word in, when it came from one.</summary>
+    public int? IntroducedInLesson { get; set; }
+
+    /// <summary>
+    /// False retires a word from the trainers without deleting it — the history stays readable and
+    /// the lesson that introduced it still makes sense. Deleting is still available and still final.
+    /// </summary>
+    public bool Active { get; set; } = true;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<VocabProgress> Progress { get; set; } = [];

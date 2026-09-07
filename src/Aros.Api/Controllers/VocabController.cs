@@ -129,9 +129,14 @@ public class VocabController(AppDbContext db, VocabService vocab, VocabImporter 
     /// Import a pasted table of words. Matching is on characters and pinyin, so a second reading of
     /// the same character is reported rather than silently replacing the first.
     /// </summary>
+    /// <param name="review">
+    /// True for a table the tutor produced, so it lands in the review queue instead of straight
+    /// into the rotation. Typing a table out yourself is its own review; a model's is not.
+    /// </param>
     [HttpPost("import")]
-    public async Task<IActionResult> Import([FromBody] VocabDumpRequest request, CancellationToken ct) =>
-        Ok(Describe(await dump.ImportAsync(request.Text, ct)));
+    public async Task<IActionResult> Import(
+        [FromBody] VocabDumpRequest request, [FromQuery] bool review = false, CancellationToken ct = default) =>
+        Ok(Describe(await dump.ImportAsync(request.Text, ct, review)));
 
     private static object Describe(VocabImportResult result) => new
     {

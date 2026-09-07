@@ -17,6 +17,9 @@ async function request(method, path, body) {
 }
 
 export const api = {
+  // Streaming reads the body itself, so it needs the prefix rather than the helper
+  base: BASE_URL,
+
   get: (path) => request('GET', path),
   post: (path, body) => request('POST', path, body),
   put: (path, body) => request('PUT', path, body),

@@ -13,6 +13,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<VocabProgress> VocabProgress => Set<VocabProgress>();
     public DbSet<VocabAnswer> VocabAnswers => Set<VocabAnswer>();
 
+    public DbSet<TutorSettings> TutorSettings => Set<TutorSettings>();
+    public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
+    public DbSet<GrammarPoint> GrammarPoints => Set<GrammarPoint>();
+    public DbSet<PronunciationRule> PronunciationRules => Set<PronunciationRule>();
+    public DbSet<WeakPoint> WeakPoints => Set<WeakPoint>();
+    public DbSet<Lesson> Lessons => Set<Lesson>();
+    public DbSet<TutorProposal> TutorProposals => Set<TutorProposal>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<VocabWord>(entity =>
@@ -20,6 +28,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             // 多音字 stay separate: 行/xing2 and 行/hang2 are two words with two scores
             entity.HasIndex(w => new { w.Characters, w.Pinyin }).IsUnique();
             entity.HasIndex(w => w.Characters);
+
+            // Stated for the database, not just for C#: a property initialiser is invisible to a
+            // migration, so without this every word already in the pool is added as retired.
+            entity.Property(w => w.Active).HasDefaultValue(true);
         });
 
         modelBuilder.Entity<VocabProgress>(entity =>
@@ -41,6 +53,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                   .HasForeignKey(a => a.VocabWordId)
                   .OnDelete(DeleteBehavior.Cascade);
         });
+
+        modelBuilder.Entity<GrammarPoint>(entity => entity.HasIndex(g => g.Key).IsUnique());
+        modelBuilder.Entity<PronunciationRule>(entity => entity.HasIndex(r => r.Key).IsUnique());
+        modelBuilder.Entity<Lesson>(entity => entity.HasIndex(l => l.Number).IsUnique());
+
+        // The chat is read newest-last for the page and summed per day for the budget
+        modelBuilder.Entity<ChatMessage>(entity => entity.HasIndex(m => m.CreatedAt));
 
         modelBuilder.Entity<ListeningAnswer>(entity =>
         {
