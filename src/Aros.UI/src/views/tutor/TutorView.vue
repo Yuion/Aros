@@ -392,23 +392,38 @@ function pretty(payload) {
   }
 }
 
+/**
+ * Clearing is only ever about the conversation. The course state lives in its own tables and is
+ * written by approving a write-up, never by chatting — so the warning has to say that a lesson
+ * nobody ended is a lesson nobody recorded.
+ */
 async function newConversation() {
-  if (
-    !window.confirm(
-      'Clear the conversation and start fresh? The chat is wiped and the tutor forgets the ' +
-        'thread. Everything learned stays: lessons, grammar, weak points, vocabulary and every ' +
-        'score live elsewhere.',
-    )
-  ) {
-    return
-  }
+  const unsaved = messages.value.length > 0
+
+  const warning = unsaved
+    ? [
+        'Clear the conversation?',
+        '',
+        'This conversation is NOT saved to your course. If it was a lesson, press "End lesson"',
+        'first and approve the write-up — otherwise nothing from it is recorded.',
+        '',
+        'Untouched either way: your vocabulary, sentences, every trainer score, and the lessons,',
+        'grammar and weak points already recorded.',
+      ].join(' ')
+    : 'Start a fresh thread?'
+
+  if (!window.confirm(warning)) return
+
+  busy.value = true
 
   try {
     const r = await api.post('/tutor/conversation/new')
-    importReport.value = r.cleared ? `Cleared ${r.cleared} messages. Fresh thread.` : 'Fresh thread.'
+    importReport.value = r.cleared ? `Cleared ${r.cleared} messages.` : 'Fresh thread.'
     await load()
   } catch (e) {
     error.value = e.message
+  } finally {
+    busy.value = false
   }
 }
 
