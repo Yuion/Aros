@@ -427,19 +427,26 @@ function pretty(payload) {
  * never starts halfway through an exercise nobody finished.
  */
 async function startLesson(minutes) {
+  if (busy.value) return
+
   busy.value = true
   error.value = ''
+  importReport.value = ''
 
   try {
     await api.post('/tutor/lesson/start', { minutes })
     exercise.value = null
-    importReport.value = `${minutes}-minute lesson started. Ask it to begin.`
     await load()
   } catch (e) {
     error.value = e.message
+    return
   } finally {
     busy.value = false
   }
+
+  // Sent as your own message so the thread reads as a conversation rather than a control panel.
+  // The runtime already carries the length; this is what makes the tutor actually begin.
+  await ask(`I want to start a new lesson. I have around ${minutes} minutes.`)
 }
 
 async function newConversation() {
