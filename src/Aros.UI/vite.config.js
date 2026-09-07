@@ -20,20 +20,12 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // Cache app shell
+        // The app shell only. API responses are deliberately NOT cached: they were, for a day
+        // at a time, back when an offline mode was planned. That plan went with the Pi, and
+        // again when Aros became a single closed machine that is never offline — but the cache
+        // stayed, and quietly served state up to 24 hours old. It cost an evening wondering why
+        // a freshly set API key still read as missing.
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-        // Cache API responses for offline reads
-        runtimeCaching: [
-          {
-            urlPattern: /^http.*\/api\/.*/,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              networkTimeoutSeconds: 5,
-              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 },
-            },
-          },
-        ],
       },
     }),
   ],
