@@ -257,6 +257,10 @@ async function ask(message) {
   error.value = ''
   importReport.value = ''
 
+  // Answered, so it is done with. It comes back only if a new one arrives — or if the turn
+  // fails, in which case the server still reports it and load() puts it back.
+  exercise.value = null
+
   try {
     const turn = await api.post('/tutor/send', { text: message })
 

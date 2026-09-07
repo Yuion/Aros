@@ -37,9 +37,13 @@ public class TutorController(
         var spend = await budget.StateAsync(ct);
         var runtime = await runtimeService.CurrentAsync(ct);
 
-        // The exercise still on screen, if the learner has not answered it yet
-        var pending = runtime.ExerciseKey is { Length: > 0 } && runtime.AwaitingUserAnswer
-            ? await db.Exercises.AsNoTracking().FirstOrDefaultAsync(e => e.Key == runtime.ExerciseKey, ct)
+        // The exercise the learner is on: waiting for an answer, or mid-grading. The second case
+        // matters when a turn fails — the answer was given but nothing came back, and the exercise
+        // should not vanish along with the reply.
+        var openKey = runtime.AwaitingUserAnswer ? runtime.ExerciseKey : runtime.AnsweringExerciseKey;
+
+        var pending = openKey is { Length: > 0 }
+            ? await db.Exercises.AsNoTracking().FirstOrDefaultAsync(e => e.Key == openKey, ct)
             : null;
 
         return Ok(new
