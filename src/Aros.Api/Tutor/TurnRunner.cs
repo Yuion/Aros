@@ -90,10 +90,24 @@ public class TurnRunner(
         TutorSettings settings, LessonRuntime runtime, string message, CancellationToken ct)
     {
         var instructions = await InstructionsAsync(ct);
+
+        // Grading needs the answers the model had in mind. Relying on it to remember them across a
+        // long thread is the kind of recall this whole design exists to stop depending on.
+        if (await PendingAsync(runtime, ct) is { } pending)
+        {
+            var describe = PendingExercise.Describe(CharacterBank.Read(pending.ItemsJson), message, pending.Key);
+            instructions = string.Join("\n\n", instructions, describe);
+        }
+
         var reply = await client.SendAsync(instructions, message, settings.ConversationRef, ct, TurnSchema.Definition);
 
         return (Parse(reply.Text), reply);
     }
+
+    private async Task<Exercise?> PendingAsync(LessonRuntime runtime, CancellationToken ct) =>
+        runtime.AnsweringExerciseKey is { Length: > 0 } key
+            ? await db.Exercises.AsNoTracking().FirstOrDefaultAsync(e => e.Key == key, ct)
+            : null;
 
     private record BuiltExercise(Exercise? Exercise, string? Warning);
 

@@ -24,6 +24,26 @@
       </div>
     </header>
 
+    <!-- A lesson has a length, so the tutor can pace itself and wind down rather than stop dead -->
+    <section v-if="state && !lessonRunning" class="card start">
+      <h2>Start a lesson</h2>
+      <p class="card-note">
+        How long have you got? The tutor is told the length and how far in it is, and starts
+        winding down near the end instead of opening new ground.
+      </p>
+      <ul class="lengths">
+        <li v-for="minutes in LENGTHS" :key="minutes">
+          <button class="length" :disabled="busy" @click="startLesson(minutes)">{{ minutes }} min</button>
+        </li>
+      </ul>
+    </section>
+
+    <p v-else-if="state && lessonRunning" class="notice running">
+      Lesson under way — {{ state.runtime.minutesElapsed }} of
+      {{ state.runtime.minutesRequested }} minutes,
+      {{ state.runtime.exercisesSent }} {{ state.runtime.exercisesSent === 1 ? 'exercise' : 'exercises' }} set.
+    </p>
+
     <p v-if="state && !state.configured" class="notice">{{ state.problem }}</p>
     <p v-if="error" class="notice error">{{ error }}</p>
 
@@ -168,6 +188,8 @@ const state = ref(null)
 const messages = ref([])
 const text = ref('')
 const exercise = ref(null)
+
+const LENGTHS = [15, 30, 45, 60, 90, 120]
 const busy = ref(false)
 const error = ref('')
 const context = ref(null)
@@ -183,6 +205,8 @@ const budgetTight = computed(() => {
   const b = state.value?.budget
   return b ? b.left < b.limit * 0.1 : false
 })
+
+const lessonRunning = computed(() => !!state.value?.runtime?.minutesRequested)
 
 const lastFailed = computed(() => {
   const last = messages.value[messages.value.length - 1]
@@ -398,6 +422,26 @@ function pretty(payload) {
  * written by approving a write-up, never by chatting — so the warning has to say that a lesson
  * nobody ended is a lesson nobody recorded.
  */
+/**
+ * Begins a lesson of a chosen length. It clears whatever was pending from last time, so a lesson
+ * never starts halfway through an exercise nobody finished.
+ */
+async function startLesson(minutes) {
+  busy.value = true
+  error.value = ''
+
+  try {
+    await api.post('/tutor/lesson/start', { minutes })
+    exercise.value = null
+    importReport.value = `${minutes}-minute lesson started. Ask it to begin.`
+    await load()
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    busy.value = false
+  }
+}
+
 async function newConversation() {
   const unsaved = messages.value.length > 0
 
@@ -658,6 +702,40 @@ h1 {
 .context {
   max-height: 40vh;
   overflow-y: auto;
+}
+
+.start h2 {
+  font-size: 1rem;
+}
+
+.lengths {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.length {
+  padding: 0.5rem 0.9rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #6d5bd0;
+  background: white;
+  border: 2px solid #ddd6fe;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.length:hover:not(:disabled) {
+  border-color: #6d5bd0;
+}
+
+.notice.running {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1e40af;
 }
 
 .exercise {

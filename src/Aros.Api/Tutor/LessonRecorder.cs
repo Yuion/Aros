@@ -18,7 +18,11 @@ namespace Aros.Api.Tutor;
 /// same shape as the course file, so applying it is <see cref="CourseImporter"/> and not a second
 /// way into the database.
 /// </summary>
-public class LessonRecorder(AppDbContext db, OpenAiClient client, ILogger<LessonRecorder> logger)
+public class LessonRecorder(
+    AppDbContext db,
+    OpenAiClient client,
+    LessonRuntimeService runtimeService,
+    ILogger<LessonRecorder> logger)
 {
     // The shape lives in LessonSchema and is enforced by the API. What is left here is judgement,
     // which no schema can express: what counts as new, and what counts as a weakness.
@@ -52,6 +56,11 @@ public class LessonRecorder(AppDbContext db, OpenAiClient client, ILogger<Lesson
         var request = Request
             .Replace("LESSON_NUMBER", lessonNumber.ToString())
             .Replace("TODAY", DateTime.Now.ToString("yyyy-MM-dd"));
+
+        // What the application watched happen, so the write-up is not purely from recall
+        var runtime = await runtimeService.CurrentAsync(ct);
+        request = string.Join(Environment.NewLine + Environment.NewLine,
+            request, LessonRuntimeService.Describe(runtime));
 
         // The shape is enforced by the API, not merely requested: with a schema attached the model
         // cannot return prose, a code fence, or a field that is missing or misspelled.

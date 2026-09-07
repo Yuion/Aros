@@ -63,7 +63,20 @@ public class LessonRuntimeService(AppDbContext db)
             text.AppendLine($"  new_grammar_this_lesson: {string.Join(", ", runtime.NewGrammarThisLesson)}");
 
         if (runtime.MinutesRequested is { } minutes)
+        {
             text.AppendLine($"  minutes_requested: {minutes}");
+
+            if (runtime.StartedAt is { } started)
+            {
+                var elapsed = (int)(DateTime.UtcNow - started).TotalMinutes;
+                text.AppendLine($"  minutes_elapsed: {elapsed}");
+
+                if (elapsed >= minutes)
+                    text.AppendLine("  the requested time is up — bring the lesson to a close");
+                else if (elapsed >= minutes * 0.8)
+                    text.AppendLine("  approaching the end — start winding down rather than opening new ground");
+            }
+        }
 
         return text.ToString().TrimEnd();
     }
@@ -126,7 +139,7 @@ public class LessonRuntimeService(AppDbContext db)
     }
 
     /// <summary>A fresh lesson: a new id, nothing pending, nothing yet introduced.</summary>
-    public async Task ResetAsync(CancellationToken ct)
+    public async Task<LessonRuntime> ResetAsync(CancellationToken ct, int? minutes = null)
     {
         var runtime = await CurrentAsync(ct);
 
@@ -142,7 +155,10 @@ public class LessonRuntimeService(AppDbContext db)
         runtime.NewVocabularyThisLesson = [];
         runtime.NewGrammarThisLesson = [];
         runtime.StartedAt = DateTime.UtcNow;
+        runtime.MinutesRequested = minutes;
+        runtime.Phase = minutes is null ? LessonPhase.Idle : LessonPhase.Input;
 
         await db.SaveChangesAsync(ct);
+        return runtime;
     }
 }

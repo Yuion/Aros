@@ -11,6 +11,7 @@ namespace Aros.Api.Controllers;
 
 public record TutorMessageRequest(string? Text);
 public record CourseFileRequest(string? Json);
+public record StartLessonRequest(int? Minutes);
 
 [ApiController]
 [Route("api/[controller]")]
@@ -91,6 +92,19 @@ public class TutorController(
     }
 
     /// <summary>
+    /// Begin a lesson of a given length. Clears anything left pending from last time and starts
+    /// the clock, so the tutor can pace itself and wind down rather than stopping mid-exercise.
+    /// </summary>
+    [HttpPost("lesson/start")]
+    public async Task<IActionResult> StartLesson([FromBody] StartLessonRequest request, CancellationToken ct)
+    {
+        var minutes = request.Minutes is { } m && m > 0 ? Math.Clamp(m, 5, 240) : (int?)null;
+        var runtime = await runtimeService.ResetAsync(ct, minutes);
+
+        return Ok(Describe(runtime));
+    }
+
+    /// <summary>
     /// "That was the lesson." Asks the tutor to write it up, and stores what comes back as a
     /// proposal — nothing reaches the course until it is approved.
     /// </summary>
@@ -136,6 +150,9 @@ public class TutorController(
             proposal.Status = ProposalStatus.Applied;
             proposal.DecidedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
+
+            // The lesson is recorded, so nothing should still be pending from it
+            await runtimeService.ResetAsync(ct);
 
             return Ok(new
             {
@@ -295,6 +312,8 @@ public class TutorController(
     {
         lessonId = runtime.LessonId,
         phase = runtime.Phase.ToString(),
+        minutesRequested = runtime.MinutesRequested,
+        minutesElapsed = runtime.StartedAt is { } at ? (int)(DateTime.UtcNow - at).TotalMinutes : (int?)null,
         exerciseKey = runtime.ExerciseKey,
         awaitingUserAnswer = runtime.AwaitingUserAnswer,
         exercisesSent = runtime.ExercisesSentThisLesson.Count,
