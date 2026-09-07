@@ -395,11 +395,9 @@ function pretty(payload) {
 async function newConversation() {
   if (
     !window.confirm(
-      'Clear the conversation and start fresh?
-
-' +
-        'The chat is wiped and the tutor forgets the thread. Everything learned stays — lessons, ' +
-        'grammar, weak points, vocabulary and every score live elsewhere.',
+      'Clear the conversation and start fresh? The chat is wiped and the tutor forgets the ' +
+        'thread. Everything learned stays: lessons, grammar, weak points, vocabulary and every ' +
+        'score live elsewhere.',
     )
   ) {
     return
