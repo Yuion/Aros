@@ -18,7 +18,6 @@ public record StartLessonRequest(int? Minutes);
 public class TutorController(
     AppDbContext db,
     TutorService tutor,
-    CourseState courseState,
     CourseImporter courseImporter,
     LessonRecorder recorder,
     TurnRunner runner,
@@ -343,9 +342,11 @@ public class TutorController(
     {
         var described = Describe(message);
 
-        return message.ExerciseKey is { } key && exercises.TryGetValue(key, out var exercise)
-            ? new { message = described, exercise = Describe(exercise) }
-            : new { message = described, exercise = (object?)null };
+        var carried = message.ExerciseKey is { } key && exercises.TryGetValue(key, out var exercise)
+            ? Describe(exercise)
+            : null;
+
+        return new { message = described, exercise = carried };
     }
 
     private static object Describe(ChatMessage message) => new
