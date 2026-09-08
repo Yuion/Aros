@@ -49,6 +49,13 @@ public class ChatMessage
     public int LatencyMs { get; set; }
 
     /// <summary>
+    /// Set when this message is the exercise itself. It keeps its place in the thread, so an
+    /// exercise stays readable after the next one has been set — a card beside the chat could only
+    /// ever show the latest.
+    /// </summary>
+    public string? ExerciseKey { get; set; }
+
+    /// <summary>
     /// Cleared from view by starting a new thread. The row stays because the day's spending is
     /// counted from it: deleting the chat would reset the budget along with it.
     /// </summary>

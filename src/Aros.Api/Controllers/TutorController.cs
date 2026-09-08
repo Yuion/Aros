@@ -37,14 +37,13 @@ public class TutorController(
         var spend = await budget.StateAsync(ct);
         var runtime = await runtimeService.CurrentAsync(ct);
 
-        // The exercise the learner is on: waiting for an answer, or mid-grading. The second case
-        // matters when a turn fails — the answer was given but nothing came back, and the exercise
-        // should not vanish along with the reply.
-        var openKey = runtime.AwaitingUserAnswer ? runtime.ExerciseKey : runtime.AnsweringExerciseKey;
+        // Every exercise the visible thread refers to, so each one renders where it was set
+        var keys = messages.Where(m => m.ExerciseKey is not null).Select(m => m.ExerciseKey!).ToList();
 
-        var pending = openKey is { Length: > 0 }
-            ? await db.Exercises.AsNoTracking().FirstOrDefaultAsync(e => e.Key == openKey, ct)
-            : null;
+        var exercises = await db.Exercises
+            .AsNoTracking()
+            .Where(e => keys.Contains(e.Key))
+            .ToDictionaryAsync(e => e.Key, ct);
 
         return Ok(new
         {
@@ -64,8 +63,7 @@ public class TutorController(
                 requestsThisHour = spend.RequestsThisHour,
             },
             runtime = Describe(runtime),
-            exercise = pending is null ? null : Describe(pending),
-            messages = messages.Select(Describe),
+            messages = messages.Select(m => Describe(m, exercises)),
         });
     }
 
@@ -339,6 +337,15 @@ public class TutorController(
     {
         await Response.WriteAsync($"event: {type}\ndata: {JsonSerializer.Serialize(payload)}\n\n", ct);
         await Response.Body.FlushAsync(ct);
+    }
+
+    private static object Describe(ChatMessage message, IReadOnlyDictionary<string, Data.Entities.Exercise> exercises)
+    {
+        var described = Describe(message);
+
+        return message.ExerciseKey is { } key && exercises.TryGetValue(key, out var exercise)
+            ? new { message = described, exercise = Describe(exercise) }
+            : new { message = described, exercise = (object?)null };
     }
 
     private static object Describe(ChatMessage message) => new

@@ -104,19 +104,44 @@
         Nothing yet. The tutor knows what is in your trainers — ask it to carry on the course.
       </p>
 
-      <article v-for="message in messages" :key="message.id" class="turn" :class="message.role">
-        <div v-if="message.role === 'user'" class="bubble user" :class="{ failed: message.failed }">
-          {{ message.content }}
-          <p v-if="message.failed" class="turn-error">{{ message.error }}</p>
+      <article v-for="turn in messages" :key="turn.message.id" class="turn" :class="turn.message.role">
+        <div v-if="turn.message.role === 'user'" class="bubble user" :class="{ failed: turn.message.failed }">
+          {{ turn.message.content }}
+          <p v-if="turn.message.failed" class="turn-error">{{ turn.message.error }}</p>
+        </div>
+
+        <!-- The exercise, in its place in the thread. It stays legible after the next one is set,
+             which a single card beside the chat could never manage. -->
+        <div v-else-if="turn.exercise" class="bubble exercise-bubble" :class="{ open: isOpen(turn.exercise) }">
+          <header class="ex-head">
+            <strong>{{ turn.exercise.instructions || 'Exercise' }}</strong>
+            <span class="ex-key">
+              {{ turn.exercise.key }}
+              <template v-if="turn.exercise.type"> · {{ turn.exercise.type }}</template>
+            </span>
+          </header>
+
+          <ol class="exercise-items">
+            <li v-for="(item, i) in turn.exercise.items" :key="i" lang="zh">{{ item }}</li>
+          </ol>
+
+          <template v-if="turn.exercise.characterBank.length">
+            <p class="ex-note">Character reference — some are not needed.</p>
+            <ul class="bank">
+              <li v-for="(c, i) in turn.exercise.characterBank" :key="i" lang="zh">{{ c }}</li>
+            </ul>
+          </template>
+
+          <p class="ex-state">{{ isOpen(turn.exercise) ? 'Waiting for your answer' : 'Answered' }}</p>
         </div>
 
         <div v-else class="bubble assistant">
-          <div class="md" v-html="render(message.content)" />
+          <div class="md" v-html="render(turn.message.content)" />
 
           <!-- Tables the importers can read, offered rather than applied -->
-          <div v-if="tablesIn(message).length" class="imports">
+          <div v-if="tablesIn(turn.message).length" class="imports">
             <button
-              v-for="(table, i) in tablesIn(message)"
+              v-for="(table, i) in tablesIn(turn.message)"
               :key="i"
               class="import-btn"
               :disabled="busy"
@@ -126,9 +151,10 @@
             </button>
           </div>
 
-          <p v-if="message.outputTokens" class="turn-meta">
-            {{ message.inputTokens.toLocaleString() }} in · {{ message.outputTokens.toLocaleString() }} out
-            · {{ (message.latencyMs / 1000).toFixed(1) }}s
+          <p v-if="turn.message.outputTokens" class="turn-meta">
+            {{ turn.message.inputTokens.toLocaleString() }} in ·
+            {{ turn.message.outputTokens.toLocaleString() }} out ·
+            {{ (turn.message.latencyMs / 1000).toFixed(1) }}s
           </p>
         </div>
       </article>
@@ -139,25 +165,6 @@
         </div>
       </article>
     </div>
-
-    <!-- Built here, not by the model: every character the answers need is in the bank -->
-    <section v-if="exercise" class="card exercise">
-      <header class="card-head">
-        <h2>{{ exercise.instructions || 'Exercise' }}</h2>
-        <span class="card-note">{{ exercise.key }}</span>
-      </header>
-
-      <ol class="exercise-items">
-        <li v-for="(item, i) in exercise.items" :key="i" lang="zh">{{ item }}</li>
-      </ol>
-
-      <template v-if="exercise.characterBank.length">
-        <p class="card-note">Character reference — some are not needed.</p>
-        <ul class="bank">
-          <li v-for="(c, i) in exercise.characterBank" :key="i" lang="zh">{{ c }}</li>
-        </ul>
-      </template>
-    </section>
 
     <p v-if="importReport" class="notice done">{{ importReport }}</p>
 
@@ -187,8 +194,6 @@ import { render, findTables } from '@/services/markdown'
 const state = ref(null)
 const messages = ref([])
 const text = ref('')
-const exercise = ref(null)
-
 const LENGTHS = [15, 30, 45, 60, 90, 120]
 const busy = ref(false)
 const error = ref('')
@@ -206,6 +211,11 @@ const budgetTight = computed(() => {
   return b ? b.left < b.limit * 0.1 : false
 })
 
+/** The one still open: the runtime knows which, and only one can be. */
+function isOpen(ex) {
+  return !ex.answered && state.value?.runtime?.exerciseKey === ex.key
+}
+
 const lessonRunning = computed(() => !!state.value?.runtime?.minutesRequested)
 
 const lastFailed = computed(() => {
@@ -218,7 +228,6 @@ async function load() {
     const [next, pending] = await Promise.all([api.get('/tutor'), api.get('/tutor/proposals')])
     state.value = next
     messages.value = next.messages
-    exercise.value = next.exercise
     proposals.value = pending
     await toBottom()
   } catch (e) {
@@ -257,15 +266,10 @@ async function ask(message) {
   error.value = ''
   importReport.value = ''
 
-  // Answered, so it is done with. It comes back only if a new one arrives — or if the turn
-  // fails, in which case the server still reports it and load() puts it back.
-  exercise.value = null
 
   try {
     const turn = await api.post('/tutor/send', { text: message })
 
-    messages.value.push(turn.question, turn.answer)
-    exercise.value = turn.exercise
     if (turn.warning) importReport.value = turn.warning
 
     await load()
@@ -439,7 +443,6 @@ async function startLesson(minutes) {
 
   try {
     await api.post('/tutor/lesson/start', { minutes })
-    exercise.value = null
     await load()
   } catch (e) {
     error.value = e.message
@@ -749,9 +752,47 @@ h1 {
   color: #1e40af;
 }
 
-.exercise {
-  border-color: #ddd6fe;
+.exercise-bubble {
+  width: 100%;
+  max-width: 100%;
   background: #faf9ff;
+  border: 1px solid #ddd6fe;
+}
+
+/* The open one is the only one you can act on, so it is the only one that says so loudly */
+.exercise-bubble.open {
+  border-color: #6d5bd0;
+  box-shadow: 0 0 0 1px #6d5bd0;
+}
+
+.ex-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.ex-key {
+  font-size: 0.7rem;
+  color: #9ca3af;
+}
+
+.ex-note {
+  font-size: 0.74rem;
+  color: #6b7280;
+  margin-bottom: 0.3rem;
+}
+
+.ex-state {
+  margin-top: 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #9ca3af;
+}
+
+.exercise-bubble.open .ex-state {
+  color: #6d5bd0;
 }
 
 .exercise-items {

@@ -66,6 +66,19 @@ public class TurnRunner(
 
             db.ChatMessages.Add(answer);
 
+            // The exercise is a turn of its own, so it stays in the thread rather than living in a
+            // panel that can only ever hold the latest one.
+            if (exercise?.Exercise is { } set)
+            {
+                db.ChatMessages.Add(new ChatMessage
+                {
+                    Role = ChatRole.Assistant,
+                    Content = "",
+                    ExerciseKey = set.Key,
+                    Model = reply.Model,
+                });
+            }
+
             settings.ConversationStartedAt ??= DateTime.UtcNow;
             settings.ConversationRef = reply.ResponseId;
             settings.LastUsedAt = DateTime.UtcNow;
