@@ -52,6 +52,11 @@ const routes = [
         name: 'stats-vocab',
         component: () => import('@/views/stats/VocabStatsView.vue'),
       },
+      {
+        path: 'tutor',
+        name: 'stats-tutor',
+        component: () => import('@/views/stats/TutorStatsView.vue'),
+      },
     ],
   },
   // Old bookmark from when stats were listening-only

@@ -10,7 +10,11 @@ namespace Aros.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class StatsController(AppDbContext db, ListeningService listening, VocabService vocab) : ControllerBase
+public class StatsController(
+    AppDbContext db,
+    ListeningService listening,
+    VocabService vocab,
+    Tutor.LessonRuntimeService runtimeService) : ControllerBase
 {
     private const int TrendDays = 30;
 
@@ -251,6 +255,136 @@ public class StatsController(AppDbContext db, ListeningService listening, VocabS
             nextDue = a.NextDueAt is { } due ? Availability.Due(due) : null,
         })
     ];
+
+    /// <summary>
+    /// The course as a chronicle: every recorded lesson in order, with what it brought in.
+    ///
+    /// Grammar and pronunciation rules attach by the lesson number they name, which is reliable.
+    /// Vocabulary attaches by IntroducedInLesson where it is set and otherwise by matching the
+    /// characters the write-up listed, because words imported from a table do not carry a lesson.
+    /// Exercises attach by date: they are keyed to a runtime lesson id, which is not the same thing
+    /// as a lesson number, and inventing a link would be worse than a rough one.
+    /// </summary>
+    [HttpGet("tutor")]
+    public async Task<IActionResult> TutorChronicle(CancellationToken ct)
+    {
+        var lessons = await db.Lessons.AsNoTracking().OrderByDescending(l => l.Number).ToListAsync(ct);
+        var grammar = await db.GrammarPoints.AsNoTracking().ToListAsync(ct);
+        var rules = await db.PronunciationRules.AsNoTracking().ToListAsync(ct);
+        var words = await db.VocabWords.AsNoTracking().ToListAsync(ct);
+        var weak = await db.WeakPoints.AsNoTracking().ToListAsync(ct);
+        var exercises = await db.Exercises.AsNoTracking().ToListAsync(ct);
+
+        var runtime = await runtimeService.CurrentAsync(ct);
+
+        var byCharacters = words
+            .GroupBy(w => w.Characters)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        var chronicle = lessons.Select(lesson => new
+        {
+            number = lesson.Number,
+            date = lesson.Date,
+            durationMinutes = lesson.DurationMinutes,
+            summary = lesson.Summary,
+            nextRecommendedTopic = lesson.NextRecommendedTopic,
+            mistakes = lesson.MistakeNotes,
+            reinforced = lesson.Reinforced,
+
+            // Whatever the pool knows about the words the write-up named
+            vocabulary = lesson.NewVocabulary
+                .Select(characters => byCharacters.TryGetValue(characters, out var word)
+                    ? new { characters, pinyin = word.Pinyin, english = word.English, known = true }
+                    : new { characters, pinyin = "", english = "", known = false })
+                .ToList(),
+
+            grammar = grammar
+                .Where(g => g.IntroducedInLesson == lesson.Number)
+                .Select(g => new { g.Title, g.Summary, status = g.Status.ToString() })
+                .ToList(),
+
+            // Anything the write-up mentioned that has no grammar row of its own
+            grammarMentioned = lesson.NewGrammar
+                .Where(name => !grammar.Any(g =>
+                    g.IntroducedInLesson == lesson.Number &&
+                    g.Title.Contains(name, StringComparison.OrdinalIgnoreCase)))
+                .ToList(),
+
+            rules = rules
+                .Where(r => r.IntroducedInLesson == lesson.Number)
+                .Select(r => new { r.Title, r.Summary })
+                .ToList(),
+
+            exercises = exercises
+                .Where(e => DateOnly.FromDateTime(e.SentAt.ToLocalTime()) == lesson.Date)
+                .OrderBy(e => e.Id)
+                .Select(e => new
+                {
+                    e.Key,
+                    e.Type,
+                    items = Tutor.CharacterBank.Read(e.ItemsJson).Count,
+                    answered = e.AnsweredAt is not null,
+                })
+                .ToList(),
+        }).ToList();
+
+        // Words the pool holds that no lesson claims — imported by hand, or from before the tutor
+        var unattributed = words.Count(w =>
+            w.IntroducedInLesson is null && !lessons.Any(l => l.NewVocabulary.Contains(w.Characters)));
+
+        var messagesSinceLastLesson = await db.ChatMessages.AsNoTracking().CountAsync(m => !m.Hidden, ct);
+
+        return Ok(new
+        {
+            totals = new
+            {
+                lessons = lessons.Count,
+                first = lessons.Count == 0 ? null : lessons.Min(l => l.Date).ToString("yyyy-MM-dd"),
+                last = lessons.Count == 0 ? null : lessons.Max(l => l.Date).ToString("yyyy-MM-dd"),
+                minutes = lessons.Sum(l => l.DurationMinutes ?? 0),
+                vocabulary = words.Count,
+                unattributed,
+                grammar = grammar.Count,
+                rules = rules.Count,
+                exercises = exercises.Count,
+                exercisesAnswered = exercises.Count(e => e.AnsweredAt is not null),
+                weakOpen = weak.Count(w => !w.Resolved),
+                weakResolved = weak.Count(w => w.Resolved),
+            },
+
+            // A lesson under way has not been written up yet, and that is worth saying plainly
+            inProgress = runtime.MinutesRequested is not null || runtime.ExercisesSentThisLesson.Count > 0
+                ? new
+                {
+                    lessonId = runtime.LessonId,
+                    phase = runtime.Phase.ToString(),
+                    minutesRequested = runtime.MinutesRequested,
+                    minutesElapsed = runtime.StartedAt is { } at ? (int)(DateTime.UtcNow - at).TotalMinutes : (int?)null,
+                    exercisesSent = runtime.ExercisesSentThisLesson.Count,
+                    newVocabulary = runtime.NewVocabularyThisLesson,
+                    newGrammar = runtime.NewGrammarThisLesson,
+                    messages = messagesSinceLastLesson,
+                }
+                : null,
+
+            weakPoints = weak
+                .OrderBy(w => w.Resolved)
+                .ThenByDescending(w => w.Severity)
+                .Select(w => new
+                {
+                    w.Target,
+                    w.Type,
+                    w.Severity,
+                    kind = w.Kind.ToString(),
+                    w.FirstSeen,
+                    w.Resolved,
+                    w.ResolvedAt,
+                })
+                .ToList(),
+
+            lessons = chronicle,
+        });
+    }
 
     private static RestSchedule Ladder(TtsClipStat stat) => RestSchedule.ForListening(stat.WrongCount);
 

@@ -22,6 +22,7 @@ import { RouterLink, RouterView } from 'vue-router'
 const TABS = [
   { to: '/stats/listening', label: 'Listening', icon: '👂' },
   { to: '/stats/vocab', label: 'Vocabulary', icon: '📖' },
+  { to: '/stats/tutor', label: 'Tutor', icon: '🧑‍🏫' },
 ]
 </script>
 
