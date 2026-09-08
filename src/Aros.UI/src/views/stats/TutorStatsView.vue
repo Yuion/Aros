@@ -72,8 +72,11 @@
                 <span class="status" :class="g.status.toLowerCase()">{{ g.status.toLowerCase() }}</span>
                 <p v-if="g.summary" class="point-note">{{ g.summary }}</p>
               </li>
-              <li v-for="name in lesson.grammarMentioned" :key="name" class="mentioned">
-                {{ name }} <span class="w-note">mentioned, no entry of its own</span>
+              <li v-for="m in lesson.grammarMentioned" :key="m.name" class="mentioned">
+                {{ m.name }}
+                <span class="w-note">
+                  {{ m.recordedIn ? `recorded under lesson ${m.recordedIn}` : 'no entry of its own' }}
+                </span>
               </li>
             </ul>
           </div>

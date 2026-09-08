@@ -291,11 +291,19 @@ public class StatsController(
             mistakes = lesson.MistakeNotes,
             reinforced = lesson.Reinforced,
 
-            // Whatever the pool knows about the words the write-up named
+            // Whatever the pool knows about the words the write-up named. An entry may be plain
+            // characters, as a lesson write-up gives them, or the flattened
+            // "本 · ben3 · measure word for books" that an imported course file produced — so the
+            // characters are taken from the head of it either way.
             vocabulary = lesson.NewVocabulary
-                .Select(characters => byCharacters.TryGetValue(characters, out var word)
-                    ? new { characters, pinyin = word.Pinyin, english = word.English, known = true }
-                    : new { characters, pinyin = "", english = "", known = false })
+                .Select(entry =>
+                {
+                    var characters = Characters(entry);
+
+                    return byCharacters.TryGetValue(characters, out var word)
+                        ? new { characters, pinyin = word.Pinyin, english = word.English, known = true }
+                        : new { characters, pinyin = "", english = Rest(entry, characters), known = false };
+                })
                 .ToList(),
 
             grammar = grammar
@@ -303,11 +311,23 @@ public class StatsController(
                 .Select(g => new { g.Title, g.Summary, status = g.Status.ToString() })
                 .ToList(),
 
-            // Anything the write-up mentioned that has no grammar row of its own
+            // Named by the write-up but attached to a different lesson, or to none at all. Saying
+            // which of the two is honest: "no entry" and "recorded under lesson 9" are not the
+            // same situation, and the first would be wrong for most of these.
             grammarMentioned = lesson.NewGrammar
                 .Where(name => !grammar.Any(g =>
-                    g.IntroducedInLesson == lesson.Number &&
-                    g.Title.Contains(name, StringComparison.OrdinalIgnoreCase)))
+                    g.IntroducedInLesson == lesson.Number && Matches(g.Title, name)))
+                .Select(name =>
+                {
+                    var elsewhere = grammar.FirstOrDefault(g => Matches(g.Title, name));
+
+                    return new
+                    {
+                        name,
+                        recordedIn = elsewhere?.IntroducedInLesson,
+                        title = elsewhere?.Title,
+                    };
+                })
                 .ToList(),
 
             rules = rules
@@ -329,8 +349,11 @@ public class StatsController(
         }).ToList();
 
         // Words the pool holds that no lesson claims — imported by hand, or from before the tutor
-        var unattributed = words.Count(w =>
-            w.IntroducedInLesson is null && !lessons.Any(l => l.NewVocabulary.Contains(w.Characters)));
+        var claimed = lessons
+            .SelectMany(l => l.NewVocabulary.Select(Characters))
+            .ToHashSet();
+
+        var unattributed = words.Count(w => w.IntroducedInLesson is null && !claimed.Contains(w.Characters));
 
         var messagesSinceLastLesson = await db.ChatMessages.AsNoTracking().CountAsync(m => !m.Hidden, ct);
 
@@ -385,6 +408,22 @@ public class StatsController(
             lessons = chronicle,
         });
     }
+
+    /// <summary>
+    /// The word itself, out of an entry that may carry its reading and meaning alongside it.
+    /// </summary>
+    private static string Characters(string entry) =>
+        entry.Split('·', StringSplitOptions.TrimEntries).FirstOrDefault() ?? entry.Trim();
+
+    private static string Rest(string entry, string characters) =>
+        entry.Length > characters.Length
+            ? entry[characters.Length..].Trim(' ', '·')
+            : "";
+
+    /// <summary>Loose either way round: a title may name the pattern, or the pattern the title.</summary>
+    private static bool Matches(string title, string name) =>
+        title.Contains(name, StringComparison.OrdinalIgnoreCase)
+        || name.Contains(title, StringComparison.OrdinalIgnoreCase);
 
     private static RestSchedule Ladder(TtsClipStat stat) => RestSchedule.ForListening(stat.WrongCount);
 
