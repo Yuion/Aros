@@ -88,8 +88,10 @@ public class TutorService(AppDbContext db, CourseState courseState, LessonRuntim
         db.ChatMessages
             .Where(m => !m.Hidden)
             .AsNoTracking()
-            .OrderByDescending(m => m.Id)
+            .OrderByDescending(m => m.CreatedAt)
+            .ThenByDescending(m => m.Id)
             .Take(take)
-            .OrderBy(m => m.Id)
+            .OrderBy(m => m.CreatedAt)
+            .ThenBy(m => m.Id)
             .ToListAsync(ct);
 }

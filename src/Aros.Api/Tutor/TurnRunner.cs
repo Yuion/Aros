@@ -144,10 +144,17 @@ public class TurnRunner(
 
         var fingerprint = ExerciseGuard.Fingerprint(items);
 
+        // A repeat gets no second identity, but dropping it silently loses the task: asking for the
+        // same drill again is a fair request. The one already stored is reopened and shown afresh.
         if (await guard.DuplicateOfAsync(fingerprint, ct) is { } repeat)
         {
-            logger.LogWarning("Exercise refused as a repeat of {Key}", repeat.Key);
-            return new BuiltExercise(null, $"An exercise identical to {repeat.Key} was dropped rather than repeated.");
+            var again = await db.Exercises.FirstAsync(e => e.Key == repeat.Key, ct);
+            again.SentAt = DateTime.UtcNow;
+            again.AnsweredAt = null;
+            await db.SaveChangesAsync(ct);
+
+            logger.LogInformation("Exercise {Key} set again rather than duplicated", again.Key);
+            return new BuiltExercise(again, $"{again.Key} is the same task, so it was set again rather than duplicated.");
         }
 
         var known = CharacterBank.KnownCharacters(
