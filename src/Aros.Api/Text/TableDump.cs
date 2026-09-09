@@ -25,8 +25,12 @@ public static partial class TableDump
     [GeneratedRegex(@"^:?-{2,}:?$")]
     private static partial Regex RuleCell();
 
-    /// <summary>Space-separated syllables carrying tone numbers — `wo3 xi3 huan5 cha2`.</summary>
-    [GeneratedRegex(@"^[a-zA-ZüÜ:]+[1-5](\s+[a-zA-ZüÜ:]+[1-5])*$")]
+    /// <summary>
+    /// Space-separated syllables carrying tone numbers — `wo3 xi3 huan5 cha2`. Punctuation may
+    /// follow a syllable: a two-clause line reads `ta1 zai4 na3. ta1 zai4 shang1 dian4`, and
+    /// rejecting it left the row with no pinyin and the pinyin filed as the English.
+    /// </summary>
+    [GeneratedRegex(@"^[a-zA-ZüÜ:]+[1-5][,.?!;:。？！，]*(\s+[a-zA-ZüÜ:]+[1-5][,.?!;:。？！，]*)*$")]
     private static partial Regex TonedPinyin();
 
     public static List<DumpRow> Parse(string? text)
