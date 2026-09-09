@@ -150,8 +150,12 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
     }
 
     public static Availability.Standing Standing(VocabWord word, VocabDirection direction) =>
-        new(RestSchedule.Vocabulary,
+        new(Ladder(Progress(word, direction)),
             Progress(word, direction) is { } p ? (p.ConsecutiveCorrect, p.LastSeenAt) : null);
+
+    /// <summary>A word that has been missed in this direction climbs the longer ladder.</summary>
+    internal static RestSchedule Ladder(VocabProgress? progress) =>
+        RestSchedule.ForVocabulary(progress?.WrongCount ?? 0);
 
     private static Availability Tally(Dictionary<VocabDirection, List<VocabWord>> pools) =>
         Availability.From(
@@ -394,7 +398,7 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
     /// </summary>
     private static List<VocabWord> Askable(List<VocabWord> words, VocabDirection direction) =>
         words.Where(w => Progress(w, direction) is not { } p
-                         || RestSchedule.Vocabulary.IsAvailable(p.ConsecutiveCorrect, p.LastSeenAt))
+                         || Ladder(p).IsAvailable(p.ConsecutiveCorrect, p.LastSeenAt))
              .ToList();
 
     internal static VocabProgress? Progress(VocabWord word, VocabDirection direction) =>
@@ -402,7 +406,7 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
 
     private static double Weight(VocabWord word, VocabDirection direction) =>
         Progress(word, direction) is { } progress
-            ? DrawWeight.For(RestSchedule.Vocabulary, progress.WrongCount, progress.ConsecutiveCorrect, progress.LastSeenAt)
+            ? DrawWeight.For(Ladder(progress), progress.WrongCount, progress.ConsecutiveCorrect, progress.LastSeenAt)
             : DrawWeight.Unseen;
 
     private QuestionState Lookup(Guid token) =>

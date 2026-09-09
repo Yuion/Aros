@@ -158,8 +158,9 @@ public class StatsController(
             practiced = words.Count(w => w.Progress.Count > 0),
             neverPracticed = words.Count(w => w.Progress.Count == 0 && !w.NeedsReview),
             needsReview = words.Count(w => w.NeedsReview),
-            mastered = rows.Count(r => RestSchedule.Vocabulary.IsMastered(r.Progress.ConsecutiveCorrect)),
-            resting = rows.Count(r => RestSchedule.Vocabulary.IsResting(r.Progress.ConsecutiveCorrect, r.Progress.LastSeenAt)),
+            mastered = rows.Count(r => VocabService.Ladder(r.Progress).IsMastered(r.Progress.ConsecutiveCorrect)),
+            resting = rows.Count(r => VocabService.Ladder(r.Progress)
+                .IsResting(r.Progress.ConsecutiveCorrect, r.Progress.LastSeenAt)),
             lastPlayed = rows.Count == 0 ? null : rows.Max(r => r.Progress.LastSeenAt),
         };
 
@@ -232,7 +233,7 @@ public class StatsController(
             .FirstOrDefaultAsync(ct);
 
         var mastery = MasteryBands(
-            rows.Select(r => (r.Progress.ConsecutiveCorrect, RestSchedule.Vocabulary)));
+            rows.Select(r => (r.Progress.ConsecutiveCorrect, VocabService.Ladder(r.Progress))));
         var standing = Standing(await vocab.AvailabilityAsync(null, ct));
 
         return Ok(new { totals, daily, byDirection, standing, needsWork, mastery, untouched, historyStart, trendDays = TrendDays });

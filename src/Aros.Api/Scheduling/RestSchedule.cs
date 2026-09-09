@@ -2,9 +2,9 @@ namespace Aros.Api.Scheduling;
 
 /// <summary>
 /// How long an item stays out of the pool after each correct answer in a row, and how many in a
-/// row finish it for good. The trainers no longer share one ladder: the listening trainer climbs
-/// faster and takes past failures into account, while the vocabulary trainer starts with two short
-/// rests inside the same day.
+/// row finish it for good. Each trainer has two ladders rather than one: a clean run climbs fast,
+/// and an item missed even once takes a longer road to the same place, because after a miss a
+/// streak of the same length is weaker evidence that the item has stuck.
 /// </summary>
 public sealed record RestSchedule(int FirstRestStreak, IReadOnlyList<TimeSpan> Rests)
 {
@@ -12,20 +12,42 @@ public sealed record RestSchedule(int FirstRestStreak, IReadOnlyList<TimeSpan> R
     public int MasteryStreak => FirstRestStreak + Rests.Count;
 
     /// <summary>
-    /// The vocabulary ladder. The first two steps are hours, not days: three right in a row means a
-    /// word is sticking, not that it is learned, so it is held back for the rest of the session
-    /// rather than the rest of the week.
+    /// Vocabulary, for a word never missed in this direction. Rests begin at the first correct
+    /// answer and the first two steps are hours rather than days: right once means it is sticking,
+    /// not that it is learned, so it is held back for the session rather than the week.
     /// </summary>
-    public static readonly RestSchedule Vocabulary = new(
-        FirstRestStreak: 3,
+    public static readonly RestSchedule VocabularyClean = new(
+        FirstRestStreak: 1,
         Rests:
         [
             TimeSpan.FromHours(12),
-            TimeSpan.FromHours(36),
+            TimeSpan.FromHours(24),
+            TimeSpan.FromHours(72),
+            TimeSpan.FromDays(7),
+            TimeSpan.FromDays(28),
+        ]);
+
+    /// <summary>
+    /// Vocabulary, for a word missed at least once in this direction. The ladder is the clean one
+    /// shifted a rung down and given an extra step: after a miss the same streak is weaker
+    /// evidence, so it buys less rest and mastery costs two more correct answers.
+    /// </summary>
+    public static readonly RestSchedule VocabularyLapsed = new(
+        FirstRestStreak: 1,
+        Rests:
+        [
+            TimeSpan.Zero,                 // right once after a miss earns nothing yet
+            TimeSpan.FromHours(12),
+            TimeSpan.FromHours(24),
+            TimeSpan.FromHours(72),
             TimeSpan.FromDays(7),
             TimeSpan.FromDays(14),
             TimeSpan.FromDays(28),
         ]);
+
+    /// <summary>A word's ladder depends on whether it has ever been missed in that direction.</summary>
+    public static RestSchedule ForVocabulary(int wrongCount) =>
+        wrongCount > 0 ? VocabularyLapsed : VocabularyClean;
 
     /// <summary>
     /// Listening, for a sentence never missed. Rests begin at the first correct answer and it is

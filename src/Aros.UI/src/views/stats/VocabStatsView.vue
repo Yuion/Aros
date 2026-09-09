@@ -69,9 +69,9 @@
           <h2>Mastery</h2>
           <p class="card-note">
             Counted per word <em>and</em> direction, so mastering 水 → water leaves water → 水 in
-            full rotation. From the third correct answer a pairing rests before coming back —
-            12 hours, 36 hours, then a week, two and four; the eighth masters it and it leaves
-            the pool.
+            full rotation. A pairing never missed rests 12 hours, a day, three days, a week, then
+            four, and the sixth correct answer masters it. One that has been missed climbs the same
+            steps a rung later, with a fortnight added before the last: mastery costs eight.
           </p>
           <RankedBars :rows="masteryRows" scale-to-max />
         </section>
