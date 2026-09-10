@@ -94,6 +94,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { api } from '@/services/api'
+import { clip, prefetch, release } from '@/services/audio'
 
 // Long enough to register the ✓, short enough that typing does not stall on it
 const CORRECT_PAUSE = 1000
@@ -120,6 +121,9 @@ const player = ref(null)
 const field = ref(null)
 const nextButton = ref(null)
 let advance = null
+
+// A click on 🔊 while a clip is still being fetched must win over the fetch it interrupted
+let playing = 0
 
 const current = computed(() => questions.value[index.value])
 
@@ -159,6 +163,7 @@ async function loadQuiz() {
     questions.value = quiz.questions
     await nextTick()
     replay()
+    warmNext()
     field.value?.focus()
   } catch (e) {
     error.value = e.message
@@ -167,11 +172,29 @@ async function loadQuiz() {
   }
 }
 
-function replay() {
-  if (!player.value || !current.value) return
-  player.value.src = current.value.audioUrl
-  // Autoplay can be refused before the page has seen a gesture — the 🔊 button is the fallback
-  player.value.play().catch(() => {})
+async function replay() {
+  const el = player.value
+  if (!el || !current.value) return
+
+  const mine = ++playing
+
+  try {
+    const src = await clip(current.value.audioUrl)
+    if (mine !== playing) return          // a later question or click asked for something else
+
+    el.pause()
+    el.src = src
+    // Autoplay can be refused before the page has seen a gesture — the 🔊 button is the fallback
+    await el.play()
+  } catch {
+    // A refused autoplay and a failed fetch look the same from here, and both end at the button
+  }
+}
+
+/** The clip after this one, fetched now so its first syllable is never waited on. */
+function warmNext() {
+  const upcoming = questions.value[index.value + 1]
+  if (upcoming) prefetch(upcoming.audioUrl)
 }
 
 async function choose(option) {
@@ -238,11 +261,15 @@ async function next() {
   index.value++
   await nextTick()
   replay()
+  warmNext()
   field.value?.focus()
 }
 
 onMounted(loadQuiz)
-onUnmounted(() => clearTimeout(advance))
+onUnmounted(() => {
+  clearTimeout(advance)
+  release()
+})
 </script>
 
 <style scoped>
