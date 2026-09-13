@@ -104,7 +104,9 @@ public class TtsController(AppDbContext db, TtsService tts) : ControllerBase
                 var (clip, cached) = await tts.GetOrCreateAsync(row.Chinese, row.Pinyin, row.English, ct);
                 if (cached) reused++; else added++;
             }
-            catch (Exception ex) when (ex is TtsException or HttpRequestException)
+            // Deliberately everything: a timeout arrives as TaskCanceledException and would
+            // otherwise take the rest of the batch down with it
+            catch (Exception ex) when (!ct.IsCancellationRequested)
             {
                 failures.Add(new { sentence = row.Chinese, message = ex.Message });
             }

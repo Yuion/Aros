@@ -391,9 +391,15 @@ async function applyProposal(proposal) {
       r.rules ? `${r.rules} pronunciation rules` : null,
       r.weakPoints ? `${r.weakPoints} weak points` : null,
       r.resolved ? `${r.resolved} resolved` : null,
+      r.words ? `${r.words} words for review` : null,
+      r.sentences ? `${r.sentences} sentences spoken` : null,
+      r.drills ? `${r.drills} grammar drills` : null,
     ].filter(Boolean)
 
-    importReport.value = 'Saved: ' + bits.join(', ') + '.'
+    // Anything that would not synthesize is named here rather than swallowed
+    const trouble = (r.notes ?? []).filter((n) => n.includes('could not be synthesized'))
+
+    importReport.value = 'Saved: ' + bits.join(', ') + '.' + (trouble.length ? ' ' + trouble.join(' ') : '')
     await load()
   } catch (e) {
     error.value = e.message

@@ -164,6 +164,9 @@ public class TutorController(
                 weakPoints = result.WeakPoints,
                 resolved = result.Resolved,
                 lessons = result.Lessons,
+                words = result.Words,
+                sentences = result.Sentences,
+                drills = result.Drills,
                 notes = result.Notes,
             });
         }

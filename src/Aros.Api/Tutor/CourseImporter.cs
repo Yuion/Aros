@@ -156,32 +156,73 @@ public class CourseImporter(
         return result.Added + result.Updated;
     }
 
+    /// <summary>How long to wait before going back over the sentences that failed.</summary>
+    private static readonly TimeSpan SecondPassDelay = TimeSpan.FromSeconds(5);
+
     /// <summary>
-    /// The lesson's listening sentences. Each new one is a paid synthesis, so they are done one at
-    /// a time and a failure is reported rather than losing the rest of the import.
+    /// The lesson's listening sentences. Each new one is a paid synthesis, and synthesis does fail
+    /// from time to time.
+    ///
+    /// Three layers of not losing the lesson over it. The client already retries a transient
+    /// failure three times; whatever is still failing is then set aside and tried once more after
+    /// a pause, since an outage that outlives three attempts a second apart is often over within
+    /// the minute. And whatever fails even then is reported by name and skipped — saving a lesson
+    /// must never fail because one sentence would not synthesize. The rest of the lesson is
+    /// already written down by this point, and a missing clip can be added from the TTS page.
     /// </summary>
     private async Task<int> ImportSentencesAsync(List<WordSection>? items, List<string> notes, CancellationToken ct)
     {
         var rows = Rows(items);
         if (rows.Count == 0) return 0;
 
+        var (added, failed) = await SpeakAsync(rows, ct);
+
+        if (failed.Count > 0 && !ct.IsCancellationRequested)
+        {
+            logger.LogWarning("{Count} sentence(s) failed; trying again in {Delay}s", failed.Count, SecondPassDelay.TotalSeconds);
+            await Task.Delay(SecondPassDelay, ct);
+
+            var (more, stillFailing) = await SpeakAsync(failed, ct);
+            added += more;
+            failed = stillFailing;
+        }
+
+        foreach (var row in failed)
+            notes.Add($"{row.Chinese} could not be synthesized — add it in Chinese TTS.");
+
+        if (failed.Count > 0)
+            notes.Add($"{failed.Count} sentence(s) were skipped. Everything else in the lesson was saved.");
+
+        return added;
+    }
+
+    private async Task<(int Added, List<(string Chinese, string Pinyin, string English)> Failed)> SpeakAsync(
+        List<(string Chinese, string Pinyin, string English)> rows, CancellationToken ct)
+    {
         var added = 0;
+        var failed = new List<(string, string, string)>();
 
         foreach (var row in rows)
         {
+            // Asked to stop is not a failure to report: the rest simply do not happen
+            if (ct.IsCancellationRequested) { failed.Add(row); continue; }
+
             try
             {
                 var (_, cached) = await tts.GetOrCreateAsync(row.Chinese, row.Pinyin, row.English, ct);
                 if (!cached) added++;
             }
-            catch (Exception ex) when (ex is TtsException or HttpRequestException)
+            catch (Exception ex)
             {
+                // Deliberately everything: a timeout arrives as TaskCanceledException, a dropped
+                // connection as IOException, and either one taking the whole save down with it
+                // would lose a lesson that has already happened
                 logger.LogWarning(ex, "Sentence {Sentence} could not be synthesized", row.Chinese);
-                notes.Add($"{row.Chinese} could not be synthesized: {ex.Message}");
+                failed.Add(row);
             }
         }
 
-        return added;
+        return (added, failed);
     }
 
     private static List<(string Chinese, string Pinyin, string English)> Rows(List<WordSection>? items) =>
