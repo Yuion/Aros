@@ -101,6 +101,30 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         return new Quiz(mode, questions);
     }
 
+    /// <summary>
+    /// The sentences just missed, again, right now. Rests are ignored on purpose: a sentence
+    /// answered wrong a minute ago is resting only because it was answered at all, and the minute
+    /// after a miss is when the right answer is worth most.
+    /// </summary>
+    public async Task<Quiz> BuildDrillAsync(IReadOnlyList<int> clipIds, ListeningMode mode, CancellationToken ct)
+    {
+        var clips = await db.TtsClips.Include(c => c.Stats).AsNoTracking().ToListAsync(ct);
+        var groups = await db.HomophoneGroups.AsNoTracking().ToListAsync(ct);
+        var audible = mode == ListeningMode.Characters ? AudibleForms(clips, groups) : null;
+
+        var byId = clips.ToDictionary(c => c.Id);
+
+        // Asked in the order they were missed, each once
+        var questions = clipIds
+            .Where(byId.ContainsKey)
+            .Select(id => BuildQuestion(byId[id], mode, clips, audible, groups))
+            .ToList();
+
+        if (questions.Count == 0) throw new ListeningException("Nothing left to drill — those sentences are gone.");
+
+        return new Quiz(mode, questions);
+    }
+
     public async Task<TtsClip> GetClipForTokenAsync(Guid token, CancellationToken ct)
     {
         var state = Lookup(token);

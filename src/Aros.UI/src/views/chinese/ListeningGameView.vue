@@ -12,8 +12,24 @@
       <p class="score-label">Round complete</p>
       <p class="score">{{ correctCount }}<span class="score-total">/{{ questions.length }}</span></p>
       <p class="score-note">{{ verdict }}</p>
+
+      <!-- The misses, while they are still fresh. A number alone teaches nothing. -->
+      <div v-if="missed.length" class="review">
+        <h2>Worth another listen</h2>
+        <ul class="missed">
+          <li v-for="(miss, i) in missed" :key="i">
+            <button class="m-play" title="Play it again" @click="playMiss(miss)">🔊</button>
+            <span class="m-sentence" lang="zh">{{ miss.sentence }}</span>
+            <span v-if="miss.expected" class="m-expected">{{ miss.expected }}</span>
+          </li>
+        </ul>
+      </div>
+
       <div class="actions">
-        <button class="primary" @click="loadQuiz">Play again</button>
+        <button v-if="missed.length" class="primary" @click="drill">
+          Drill {{ missed.length === 1 ? 'it' : missed.length + ' of these' }}
+        </button>
+        <button class="secondary" @click="loadQuiz">Play again</button>
         <RouterLink to="/chinese-listening" class="secondary">Done</RouterLink>
       </div>
     </section>
@@ -123,6 +139,10 @@ const mode = ref('Characters')
 const typed = ref(false)
 const correctCount = ref(0)
 const finished = ref(false)
+
+// What was missed in this round, in the order it was missed, kept for the scorecard and the
+// drill that follows it
+const missed = ref([])
 const loading = ref(true)
 const error = ref('')
 const player = ref(null)
@@ -149,7 +169,29 @@ const verdict = computed(() => {
   return 'Rough round — those sentences are now weighted to reappear.'
 })
 
-async function loadQuiz() {
+/** The ones just missed, heard again. Same round machinery, a different way of choosing it. */
+async function drill() {
+  await loadQuiz(() =>
+    api.post('/listening/quiz/drill', { clipIds: missed.value.map((m) => m.clipId), mode: mode.value })
+  )
+}
+
+/** A clip from the scorecard: the round is over, so this plays it without asking anything. */
+async function playMiss(miss) {
+  const el = player.value
+  if (!el) return
+
+  try {
+    el.pause()
+    el.src = await clip(miss.audioUrl)
+    el.playbackRate = 1
+    await el.play()
+  } catch {
+    // Nothing to recover: the round is finished and the button can be pressed again
+  }
+}
+
+async function loadQuiz(build = null) {
   clearTimeout(advance)
   advance = null
   loading.value = true
@@ -159,13 +201,14 @@ async function loadQuiz() {
   text.value = ''
   index.value = 0
   correctCount.value = 0
+  missed.value = []
 
   try {
     // Length is decided server-side: every clip not resting, or ten of them
     const params = new URLSearchParams({ questions: '10', mode: route.query.mode ?? 'Characters' })
     if (route.query.sweep === 'false') params.set('sweep', 'false')
 
-    const quiz = await api.post(`/listening/quiz?${params}`)
+    const quiz = await (build ? build() : api.post(`/listening/quiz?${params}`))
     mode.value = quiz.mode
     typed.value = quiz.typed
     questions.value = quiz.questions
@@ -220,6 +263,18 @@ async function send(payload) {
   try {
     const result = await api.post('/listening/answer', { token: current.value.token, ...payload })
     answer.value = { ...result, selectedClipId: payload.selectedClipId }
+
+    if (!result.correct) {
+      missed.value = [
+        ...missed.value,
+        {
+          clipId: result.correctClipId,
+          sentence: result.correctSentence,
+          expected: result.expected,
+          audioUrl: current.value.audioUrl,
+        },
+      ]
+    }
 
     if (result.correct) {
       correctCount.value++
@@ -567,6 +622,58 @@ onUnmounted(() => {
   color: #6b7280;
   font-size: 0.9rem;
   margin-top: 0.5rem;
+}
+
+.review {
+  width: 100%;
+  margin-bottom: 1.2rem;
+}
+
+.review h2 {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #9ca3af;
+  margin-bottom: 0.5rem;
+}
+
+.missed {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  text-align: left;
+}
+
+.missed li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5rem 0.6rem;
+  align-items: baseline;
+  padding: 0.4rem 0.6rem;
+  background: white;
+  border: 1px solid #f0efec;
+  border-radius: 7px;
+}
+
+.m-play {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0;
+  line-height: 1;
+}
+
+.m-sentence {
+  font-size: 1.05rem;
+}
+
+.m-expected {
+  grid-column: 2;
+  font-size: 0.78rem;
+  color: #6d5bd0;
 }
 
 .actions {

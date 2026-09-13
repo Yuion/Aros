@@ -18,7 +18,8 @@ public record VocabQuestion(
 
 public record VocabSession(IReadOnlyList<VocabQuestion> Questions);
 
-public record VocabAnswerResult(bool Correct, string Expected, string Characters, string? Note, bool Retry = false);
+public record VocabAnswerResult(
+    bool Correct, int WordId, string Expected, string Characters, string? Note, bool Retry = false);
 
 public class VocabException(string message) : Exception(message);
 
@@ -121,6 +122,28 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
     }
 
     /// <summary>
+    /// The ones just missed, again, right now. Rests are ignored on purpose: a word answered
+    /// wrong a minute ago is resting only because it was answered at all, and the minute after a
+    /// miss is when the right answer is worth most. Order is kept as given — the order they were
+    /// missed in — and everything is asked once.
+    /// </summary>
+    public async Task<VocabSession> BuildDrillAsync(
+        IEnumerable<(int WordId, VocabDirection Direction)> wanted, CancellationToken ct)
+    {
+        var words = await TestableAsync(null, ct);
+        var byId = words.ToDictionary(w => w.Id);
+
+        var questions = wanted
+            .Where(item => byId.ContainsKey(item.WordId))
+            .Select(item => BuildQuestion(byId[item.WordId], item.Direction, words))
+            .ToList();
+
+        if (questions.Count == 0) throw new VocabException("Nothing left to drill — those words are gone.");
+
+        return new VocabSession(questions);
+    }
+
+    /// <summary>
     /// What each direction has left to ask. The start button is driven by this, so a direction
     /// whose words are all resting can say so instead of failing when the round is built.
     /// </summary>
@@ -192,7 +215,7 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
             && WrongDirection(word, state.Direction, text) is { } gave)
         {
             state.Retried = true;
-            return new VocabAnswerResult(false, "", "", $"Wrong direction — that's the {gave}.", Retry: true);
+            return new VocabAnswerResult(false, word.Id, "", "", $"Wrong direction — that's the {gave}.", Retry: true);
         }
 
         if (!state.Answered)
@@ -208,7 +231,7 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
             await db.SaveChangesAsync(ct);
         }
 
-        return new VocabAnswerResult(correct, expected, word.Characters, note);
+        return new VocabAnswerResult(correct, word.Id, expected, word.Characters, note);
     }
 
     private static (bool Correct, string? Note) Judge(

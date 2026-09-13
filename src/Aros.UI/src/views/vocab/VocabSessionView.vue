@@ -11,8 +11,24 @@
     <section v-else-if="finished" class="scorecard">
       <p class="score-label">Round complete</p>
       <p class="score">{{ correctCount }}<span class="score-total">/{{ questions.length }}</span></p>
+
+      <!-- The misses, while they are still fresh. A number alone teaches nothing. -->
+      <div v-if="missed.length" class="review">
+        <h2>Worth another look</h2>
+        <ul class="missed">
+          <li v-for="(miss, i) in missed" :key="i">
+            <span class="m-chars" lang="zh">{{ miss.characters }}</span>
+            <span class="m-expected">{{ miss.expected }}</span>
+            <span class="m-direction">{{ label(miss.direction) }}</span>
+          </li>
+        </ul>
+      </div>
+
       <div class="actions">
-        <button class="primary" @click="load">Again</button>
+        <button v-if="missed.length" class="primary" @click="drill">
+          Drill {{ missed.length === 1 ? 'it' : missed.length + ' of these' }}
+        </button>
+        <button class="secondary" @click="load">Again</button>
         <RouterLink to="/vocab" class="secondary">Done</RouterLink>
       </div>
     </section>
@@ -113,6 +129,11 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { api } from '@/services/api'
 
+// CharactersToPinyin reads as an enum name, which is what it is — but not on a results page
+function label(direction) {
+  return (direction ?? '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(' To ', ' → ')
+}
+
 // Long enough to register the ✓, short enough that typing does not stall on it
 const CORRECT_PAUSE = 1000
 
@@ -125,6 +146,10 @@ const retry = ref('')
 const text = ref('')
 const correctCount = ref(0)
 const finished = ref(false)
+
+// What was missed in this round, in the order it was missed, kept for the scorecard and for the
+// drill that follows it
+const missed = ref([])
 const loading = ref(true)
 const error = ref('')
 const field = ref(null)
@@ -142,7 +167,14 @@ const current = computed(() => questions.value[index.value])
 // A right answer moves on by itself either way: there is nothing to read on a ✓
 const autoAdvancing = computed(() => !!answer.value?.correct)
 
-async function load() {
+/** The ones just missed, asked again. Same round machinery, a different way of choosing it. */
+async function drill() {
+  const items = missed.value.map((m) => ({ wordId: m.wordId, direction: m.direction }))
+
+  await load(() => api.post('/vocab/session/drill', { items }))
+}
+
+async function load(build = null) {
   clearTimeout(advance)
   advance = null
   loading.value = true
@@ -154,6 +186,7 @@ async function load() {
   used.value = []
   index.value = 0
   correctCount.value = 0
+  missed.value = []
 
   // Length is decided server-side: everything not resting, or a sample of it
   const params = new URLSearchParams()
@@ -162,7 +195,7 @@ async function load() {
   if (route.query.sweep === 'false') params.set('sweep', 'false')
 
   try {
-    const session = await api.post(`/vocab/session?${params}`)
+    const session = await (build ? build() : api.post(`/vocab/session?${params}`))
     questions.value = session.questions
     await focusField()
   } catch (e) {
@@ -247,6 +280,18 @@ async function send(payload) {
 
     retry.value = ''
     answer.value = result
+
+    if (!result.correct) {
+      missed.value = [
+        ...missed.value,
+        {
+          wordId: result.wordId,
+          direction: current.value.direction,
+          characters: result.characters,
+          expected: result.expected,
+        },
+      ]
+    }
 
     if (result.correct) {
       correctCount.value++
@@ -590,6 +635,54 @@ onUnmounted(() => {
 .score-total {
   font-size: 2rem;
   color: #9ca3af;
+}
+
+.review {
+  width: 100%;
+  margin-bottom: 1.2rem;
+}
+
+.review h2 {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #9ca3af;
+  margin-bottom: 0.5rem;
+}
+
+.missed {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  text-align: left;
+}
+
+.missed li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.6rem;
+  align-items: baseline;
+  padding: 0.4rem 0.6rem;
+  background: white;
+  border: 1px solid #f0efec;
+  border-radius: 7px;
+}
+
+.m-chars {
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.m-expected {
+  font-size: 0.85rem;
+  color: #6d5bd0;
+}
+
+.m-direction {
+  font-size: 0.65rem;
+  color: #b8bcc4;
 }
 
 .actions {

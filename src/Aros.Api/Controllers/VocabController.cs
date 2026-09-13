@@ -14,6 +14,10 @@ public record VocabDumpRequest(string? Text);
 public record VocabEditRequest(string? Pinyin, string? English, string[]? Tags, string? Notes);
 public record RetireWordRequest(bool Retired);
 
+/// <summary>One (word, direction) to ask again — the shape a round's misses come back in.</summary>
+public record DrillItem(int WordId, string Direction);
+public record DrillRequest(List<DrillItem>? Items);
+
 [ApiController]
 [Route("api/[controller]")]
 public class VocabController(AppDbContext db, VocabService vocab, VocabImporter dump, TtsService tts) : ControllerBase
@@ -259,27 +263,53 @@ public class VocabController(AppDbContext db, VocabService vocab, VocabImporter 
     {
         try
         {
-            var session = await vocab.BuildSessionAsync(perDirection, direction, tag, sweep, ct);
-
-            return Ok(new
-            {
-                questions = session.Questions.Select(q => new
-                {
-                    token = q.Token,
-                    direction = q.Direction.ToString(),
-                    prompt = q.Prompt,
-                    promptLabel = q.PromptLabel,
-                    answerLabel = q.AnswerLabel,
-                    typed = q.Typed,
-                    tiles = q.Tiles,
-                }),
-            });
+            return Ok(Describe(await vocab.BuildSessionAsync(perDirection, direction, tag, sweep, ct)));
         }
         catch (VocabException ex)
         {
             return BadRequest(new { message = ex.Message });
         }
     }
+
+    /// <summary>
+    /// The words just missed, asked again straight away. Rests do not apply: a word answered
+    /// wrong a minute ago is only resting because it was answered at all, and the minute after a
+    /// miss is when the right answer is worth most. The answers count like any others.
+    /// </summary>
+    [HttpPost("session/drill")]
+    public async Task<IActionResult> Drill([FromBody] DrillRequest request, CancellationToken ct)
+    {
+        var items = (request.Items ?? [])
+            .Select(i => (i.WordId, Parsed: Enum.TryParse<VocabDirection>(i.Direction, out var d), Direction: d))
+            .Where(i => i.Parsed)
+            .Select(i => (i.WordId, i.Direction))
+            .ToList();
+
+        if (items.Count == 0) return BadRequest(new { message = "Nothing to drill." });
+
+        try
+        {
+            return Ok(Describe(await vocab.BuildDrillAsync(items, ct)));
+        }
+        catch (VocabException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    private static object Describe(VocabSession session) => new
+    {
+        questions = session.Questions.Select(q => new
+        {
+            token = q.Token,
+            direction = q.Direction.ToString(),
+            prompt = q.Prompt,
+            promptLabel = q.PromptLabel,
+            answerLabel = q.AnswerLabel,
+            typed = q.Typed,
+            tiles = q.Tiles,
+        }),
+    };
 
     [HttpPost("answer")]
     public async Task<IActionResult> Answer([FromBody] VocabAnswerRequest request, CancellationToken ct)
@@ -291,6 +321,7 @@ public class VocabController(AppDbContext db, VocabService vocab, VocabImporter 
             return Ok(new
             {
                 correct = result.Correct,
+                wordId = result.WordId,
                 expected = result.Expected,
                 characters = result.Characters,
                 note = result.Note,

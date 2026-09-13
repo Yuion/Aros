@@ -6,6 +6,9 @@ using Microsoft.AspNetCore.Mvc;
 namespace Aros.Api.Controllers;
 
 public record AnswerRequest(Guid Token, int? SelectedClipId, string? Text);
+/// <summary>The sentences to ask again, in the mode they were missed in.</summary>
+public record DrillQuizRequest(List<int>? ClipIds, string? Mode);
+
 public record OverrideRequest(Guid Token);
 
 [ApiController]
@@ -21,26 +24,48 @@ public class ListeningController(ListeningService listening, TtsService tts) : C
     {
         try
         {
-            var quiz = await listening.BuildQuizAsync(questions, mode, sweep, ct);
-
-            return Ok(new
-            {
-                mode = quiz.Mode.ToString(),
-                typed = ListeningService.IsTyped(quiz.Mode),
-                questions = quiz.Questions.Select(q => new
-                {
-                    token = q.Token,
-                    audioUrl = $"/api/listening/audio/{q.Token}",
-                    options = q.Options?.Select(o => new { clipId = o.ClipId, sentence = o.Sentence }),
-                    hints = q.Hints?.Select(h => new { character = h.Character, alternatives = h.Alternatives }),
-                }),
-            });
+            return Ok(Describe(await listening.BuildQuizAsync(questions, mode, sweep, ct)));
         }
         catch (ListeningException ex)
         {
             return BadRequest(new { message = ex.Message });
         }
     }
+
+    /// <summary>
+    /// The sentences just missed, asked again straight away, rests set aside. The answers count
+    /// like any others — a right answer a minute after a wrong one is still a right answer.
+    /// </summary>
+    [HttpPost("quiz/drill")]
+    public async Task<IActionResult> Drill([FromBody] DrillQuizRequest request, CancellationToken ct)
+    {
+        var clipIds = request.ClipIds ?? [];
+        if (clipIds.Count == 0) return BadRequest(new { message = "Nothing to drill." });
+        if (!Enum.TryParse<ListeningMode>(request.Mode, out var mode))
+            return BadRequest(new { message = "Unknown mode." });
+
+        try
+        {
+            return Ok(Describe(await listening.BuildDrillAsync(clipIds, mode, ct)));
+        }
+        catch (ListeningException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    private static object Describe(Quiz quiz) => new
+    {
+        mode = quiz.Mode.ToString(),
+        typed = ListeningService.IsTyped(quiz.Mode),
+        questions = quiz.Questions.Select(q => new
+        {
+            token = q.Token,
+            audioUrl = $"/api/listening/audio/{q.Token}",
+            options = q.Options?.Select(o => new { clipId = o.ClipId, sentence = o.Sentence }),
+            hints = q.Hints?.Select(h => new { character = h.Character, alternatives = h.Alternatives }),
+        }),
+    };
 
     /// <summary>
     /// "I was right after all" — for a translation the matcher rejected. The miss is undone, not
