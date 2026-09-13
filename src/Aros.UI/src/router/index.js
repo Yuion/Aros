@@ -24,6 +24,17 @@ const routes = [
     component: () => import('@/views/vocab/VocabSessionView.vue'),
   },
   {
+    path: '/grammar',
+    name: 'grammar',
+    component: () => import('@/views/grammar/GrammarView.vue'),
+    meta: { nav: true, label: 'Grammar Trainer', icon: '🧩' },
+  },
+  {
+    path: '/grammar/round',
+    name: 'grammar-round',
+    component: () => import('@/views/grammar/GrammarRoundView.vue'),
+  },
+  {
     path: '/chinese-tts',
     name: 'chinese-tts',
     component: () => import('@/views/chinese/ChineseTtsView.vue'),

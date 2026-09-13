@@ -18,13 +18,20 @@ public static class SentenceTiles
     /// <summary>Wrong tiles beyond the sentence's own.</summary>
     private const int Extras = 4;
 
-    public static List<string> Build(TtsClip clip, IReadOnlyList<TtsClip> pool, Dictionary<string, string> homophones)
+    public static List<string> Build(TtsClip clip, IReadOnlyList<TtsClip> pool, Dictionary<string, string> homophones) =>
+        Build(clip.Sentence, [.. pool.Where(c => c.Id != clip.Id).Select(c => c.Sentence)], homophones);
+
+    /// <summary>
+    /// The same thing for a sentence with no clip behind it — a grammar drill answer, say. The
+    /// pool is whatever other sentences are worth stealing characters from.
+    /// </summary>
+    public static List<string> Build(string sentence, IReadOnlyList<string> pool, Dictionary<string, string> homophones)
     {
-        var answer = Characters(clip.Sentence);
+        var answer = Characters(sentence);
         var tiles = new List<string>(answer);
         var seen = new HashSet<string>(answer);
 
-        foreach (var character in Distractors(clip, pool, homophones))
+        foreach (var character in Distractors(sentence, pool, homophones))
         {
             if (tiles.Count >= answer.Count + Extras) break;
 
@@ -43,9 +50,9 @@ public static class SentenceTiles
     /// groups exist.
     /// </summary>
     private static IEnumerable<string> Distractors(
-        TtsClip clip, IReadOnlyList<TtsClip> pool, Dictionary<string, string> homophones)
+        string sentence, IReadOnlyList<string> pool, Dictionary<string, string> homophones)
     {
-        var answer = Characters(clip.Sentence);
+        var answer = Characters(sentence);
 
         foreach (var character in answer.OrderBy(_ => Random.Shared.Next()))
         {
@@ -56,12 +63,12 @@ public static class SentenceTiles
         }
 
         var nearest = pool
-            .Where(c => c.Id != clip.Id)
-            .OrderBy(c => SentenceSimilarity.Distance(clip.Sentence, c.Sentence))
+            .Where(other => other != sentence)
+            .OrderBy(other => SentenceSimilarity.Distance(sentence, other))
             .ThenBy(_ => Random.Shared.Next());
 
         foreach (var other in nearest)
-            foreach (var character in Characters(other.Sentence))
+            foreach (var character in Characters(other))
                 yield return character;
     }
 

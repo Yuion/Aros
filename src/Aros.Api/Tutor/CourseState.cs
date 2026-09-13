@@ -38,6 +38,7 @@ public class CourseState(AppDbContext db)
         var rules = await db.PronunciationRules.AsNoTracking().OrderBy(r => r.IntroducedInLesson).ToListAsync(ct);
         var weak = await db.WeakPoints.AsNoTracking().Where(w => !w.Resolved).ToListAsync(ct);
         var lastLesson = await db.Lessons.AsNoTracking().OrderByDescending(l => l.Number).FirstOrDefaultAsync(ct);
+        var grammarProgress = await db.GrammarProgress.AsNoTracking().ToListAsync(ct);
         var review = await db.VocabWords.AsNoTracking().CountAsync(w => w.NeedsReview, ct);
 
         var text = new StringBuilder();
@@ -59,6 +60,7 @@ public class CourseState(AppDbContext db)
         if (lastLesson is not null)
             text.AppendLine($"  last lesson ({lastLesson.Number}, {lastLesson.Date:yyyy-MM-dd}): {lastLesson.Summary}");
 
+        AppendGrammarStanding(text, grammar, grammarProgress);
         AppendPreferences(text, settings?.PreferencesJson);
         AppendInventory(text, words, grammar, rules);
 
@@ -111,6 +113,42 @@ public class CourseState(AppDbContext db)
         text.AppendLine();
         text.AppendLine("CURRENT TARGETS");
         foreach (var target in targets) text.AppendLine($"  {target}");
+    }
+
+    /// <summary>
+    /// Where the grammar trainer has got to, in two lines. Deliberately thin: which patterns are
+    /// due and which are shaky is enough to choose what a lesson should cover, and a list of every
+    /// mistake would invite an hour of re-drilling something a trainer already drills better.
+    ///
+    /// "Shaky" is a pattern that has been missed and has not since strung together three correct
+    /// answers. "Due" is one whose rest has expired and which has not been asked in a week.
+    /// </summary>
+    private static void AppendGrammarStanding(
+        StringBuilder text, List<GrammarPoint> grammar, List<GrammarProgress> progress)
+    {
+        if (progress.Count == 0) return;
+
+        var byPoint = progress.ToDictionary(p => p.GrammarPointId);
+        var stale = DateTime.UtcNow.AddDays(-7);
+
+        var shaky = grammar
+            .Where(g => byPoint.TryGetValue(g.Id, out var p) && p.WrongCount > 0 && p.ConsecutiveCorrect < 3)
+            .Select(g => g.Title)
+            .ToList();
+
+        var due = grammar
+            .Where(g => byPoint.TryGetValue(g.Id, out var p)
+                        && p.LastSeenAt is { } seen && seen < stale
+                        && !shaky.Contains(g.Title))
+            .Select(g => g.Title)
+            .ToList();
+
+        if (shaky.Count == 0 && due.Count == 0) return;
+
+        text.AppendLine();
+        text.AppendLine("GRAMMAR TRAINER");
+        if (shaky.Count > 0) text.AppendLine("  shaky: " + string.Join(" · ", shaky.Take(6)));
+        if (due.Count > 0) text.AppendLine("  not practised lately: " + string.Join(" · ", due.Take(6)));
     }
 
     /// <summary>

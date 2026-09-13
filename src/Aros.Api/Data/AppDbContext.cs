@@ -22,6 +22,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<TutorProposal> TutorProposals => Set<TutorProposal>();
     public DbSet<LessonRuntime> LessonRuntime => Set<LessonRuntime>();
     public DbSet<Exercise> Exercises => Set<Exercise>();
+    public DbSet<GrammarItem> GrammarItems => Set<GrammarItem>();
+    public DbSet<GrammarProgress> GrammarProgress => Set<GrammarProgress>();
+    public DbSet<GrammarAnswer> GrammarAnswers => Set<GrammarAnswer>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -62,6 +65,29 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasIndex(e => e.Key).IsUnique();
             entity.HasIndex(e => e.Fingerprint);          // duplicate detection reads this
         });
+
+        modelBuilder.Entity<GrammarItem>(entity =>
+        {
+            // One sentence per pattern: the same drill filed twice would be drawn twice
+            entity.HasIndex(i => new { i.GrammarPointId, i.Answer }).IsUnique();
+
+            entity.HasOne(i => i.Point)
+                  .WithMany()
+                  .HasForeignKey(i => i.GrammarPointId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<GrammarProgress>(entity =>
+        {
+            entity.HasIndex(p => p.GrammarPointId).IsUnique();
+
+            entity.HasOne(p => p.Point)
+                  .WithMany()
+                  .HasForeignKey(p => p.GrammarPointId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<GrammarAnswer>(entity => entity.HasIndex(a => a.AnsweredAt));
 
         // The chat is read newest-last for the page and summed per day for the budget
         modelBuilder.Entity<ChatMessage>(entity => entity.HasIndex(m => m.CreatedAt));

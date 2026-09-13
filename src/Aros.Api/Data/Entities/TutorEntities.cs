@@ -224,3 +224,51 @@ public class Exercise
     public DateTime SentAt { get; set; } = DateTime.UtcNow;
     public DateTime? AnsweredAt { get; set; }
 }
+
+/// <summary>
+/// One sentence that exercises a grammar point: the English, and the Chinese it should become.
+///
+/// Nothing here is written for the trainer. The items are the exercises the tutor already set in
+/// lessons and the examples it recorded with each point — sentences you have already worked
+/// through once, which is what makes them fair to be asked again.
+/// </summary>
+public class GrammarItem
+{
+    public int Id { get; set; }
+    public int GrammarPointId { get; set; }
+    public GrammarPoint? Point { get; set; }
+
+    public string Prompt { get; set; } = "";          // English
+    public string Answer { get; set; } = "";          // Chinese
+
+    /// <summary>Where it came from — "L17-E04" or "example" — so a bad import can be traced.</summary>
+    public string Source { get; set; } = "";
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// How well one grammar point is known. Scheduled per point rather than per sentence: mastering
+/// 也 means producing it in six different sentences, not the same sentence six times.
+/// </summary>
+public class GrammarProgress
+{
+    public int Id { get; set; }
+    public int GrammarPointId { get; set; }
+    public GrammarPoint? Point { get; set; }
+
+    public int CorrectCount { get; set; }
+    public int WrongCount { get; set; }
+    public int ConsecutiveCorrect { get; set; }
+    public DateTime? LastSeenAt { get; set; }
+}
+
+/// <summary>One answer to one grammar drill, kept for the trend on the stats page.</summary>
+public class GrammarAnswer
+{
+    public int Id { get; set; }
+    public int GrammarPointId { get; set; }
+    public int GrammarItemId { get; set; }
+    public bool Correct { get; set; }
+    public DateTime AnsweredAt { get; set; } = DateTime.UtcNow;
+}
