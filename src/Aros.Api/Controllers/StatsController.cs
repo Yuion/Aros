@@ -46,8 +46,10 @@ public class StatsController(
             librarySize = clips.Count,
             practiced = played.Count,
             neverPracticed = clips.Count - played.Count,
-            mastered = rows.Count(r => Ladder(r.Stat).IsMastered(r.Stat.ConsecutiveCorrect)),
-            resting = rows.Count(r => Ladder(r.Stat).IsResting(r.Stat.ConsecutiveCorrect, r.Stat.LastSeenAt)),
+            mastered = rows.Count(r => Rung(r.Clip, r.Stat) is var (streak, ladder) && ladder.IsMastered(streak)),
+            resting = rows.Count(r => Rung(r.Clip, r.Stat) is var (streak, ladder)
+                                      && !ladder.IsMastered(streak)
+                                      && ladder.IsResting(streak, r.Stat.LastSeenAt)),
             withPinyin = clips.Count(c => c.Pinyin.Length > 0),
             withEnglish = clips.Count(c => c.English.Length > 0),
             lastPlayed = rows.Count == 0 ? null : rows.Max(r => r.Stat.LastSeenAt),
@@ -73,9 +75,9 @@ public class StatsController(
             })
             .ToList();
 
-        // Worst first — this is the study list
+        // Worst first — this is the study list, so a sentence you have retired is off it
         var needsWork = rows
-            .Where(r => r.Stat.WrongCount > 0)
+            .Where(r => r.Stat.WrongCount > 0 && r.Clip.RetiredAt is null)
             .Select(r => new
             {
                 sentence = r.Clip.Sentence,
@@ -90,7 +92,7 @@ public class StatsController(
             .Take(10)
             .ToList();
 
-        var mastery = MasteryBands(rows.Select(r => (r.Stat.ConsecutiveCorrect, Ladder(r.Stat))));
+        var mastery = MasteryBands(rows.Select(r => Rung(r.Clip, r.Stat)));
 
         // Hearing a sentence and writing out what you heard are different skills
         var byMode = Enum.GetValues<ListeningMode>()
@@ -117,7 +119,7 @@ public class StatsController(
             .ToList();
 
         var untouched = clips
-            .Where(c => c.Stats.Count == 0)
+            .Where(c => c.Stats.Count == 0 && c.RetiredAt is null)
             .OrderBy(c => c.CreatedAt)
             .Select(c => c.Sentence)
             .Take(20)
@@ -427,6 +429,20 @@ public class StatsController(
         || name.Contains(title, StringComparison.OrdinalIgnoreCase);
 
     private static RestSchedule Ladder(TtsClipStat stat) => RestSchedule.ForListening(stat.WrongCount);
+
+    /// <summary>
+    /// Where one sentence stands in one mode. A sentence retired by hand reads as finished however
+    /// its streak actually stands: marking it mastered is a decision, not a claim about the
+    /// streak, and the page should say the same thing the trainer does.
+    /// </summary>
+    private static (int Streak, RestSchedule Schedule) Rung(TtsClip clip, TtsClipStat stat)
+    {
+        var ladder = Ladder(stat);
+
+        return clip.RetiredAt is null
+            ? (stat.ConsecutiveCorrect, ladder)
+            : (ladder.MasteryStreak, ladder);
+    }
 
     /// <summary>
     /// How far along everything is, one bar per streak and a last bar for what is finished with.
