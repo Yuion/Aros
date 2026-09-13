@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Aros.Api.Controllers;
 
-public record VocabAnswerRequest(Guid Token, string? Text, int? SelectedWordId);
+public record VocabAnswerRequest(Guid Token, string? Text);
 /// <summary>A pasted table of words. The field is the whole paste, not one word.</summary>
 public record VocabDumpRequest(string? Text);
 public record VocabEditRequest(string? Pinyin, string? English, string[]? Tags, string? Notes);
@@ -271,7 +271,7 @@ public class VocabController(AppDbContext db, VocabService vocab, VocabImporter 
                     promptLabel = q.PromptLabel,
                     answerLabel = q.AnswerLabel,
                     typed = q.Typed,
-                    options = q.Options?.Select(o => new { wordId = o.WordId, characters = o.Characters }),
+                    tiles = q.Tiles,
                 }),
             });
         }
@@ -286,7 +286,7 @@ public class VocabController(AppDbContext db, VocabService vocab, VocabImporter 
     {
         try
         {
-            var result = await vocab.AnswerAsync(request.Token, request.Text, request.SelectedWordId, ct);
+            var result = await vocab.AnswerAsync(request.Token, request.Text, ct);
 
             return Ok(new
             {

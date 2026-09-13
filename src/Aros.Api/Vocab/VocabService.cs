@@ -7,8 +7,6 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace Aros.Api.Vocab;
 
-public record VocabOption(int WordId, string Characters);
-
 public record VocabQuestion(
     Guid Token,
     VocabDirection Direction,
@@ -16,7 +14,7 @@ public record VocabQuestion(
     string PromptLabel,
     string AnswerLabel,
     bool Typed,
-    IReadOnlyList<VocabOption>? Options);
+    IReadOnlyList<string>? Tiles);
 
 public record VocabSession(IReadOnlyList<VocabQuestion> Questions);
 
@@ -32,10 +30,13 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
     /// <summary>Length of a round when one direction is being drilled on its own.</summary>
     private const int SingleDirectionCount = 10;
 
-    private const int OptionCount = 3;
     private static readonly TimeSpan TokenLifetime = TimeSpan.FromHours(2);
 
-    /// <summary>The two directions that ask for characters are multiple choice — typing them needs an IME.</summary>
+    /// <summary>
+    /// The two directions that ask for characters are answered from tiles rather than typed —
+    /// writing them needs an IME. The answer still arrives as text, assembled from the tiles, so
+    /// there is one way to answer a question and one way to judge it.
+    /// </summary>
     private static bool IsTyped(VocabDirection direction) =>
         direction is not (VocabDirection.PinyinToCharacters or VocabDirection.EnglishToCharacters);
 
@@ -172,7 +173,7 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
             pools.SelectMany(pair => pair.Value.Select(word => Standing(word, pair.Key))));
 
     public async Task<VocabAnswerResult> AnswerAsync(
-        Guid token, string? text, int? selectedWordId, CancellationToken ct)
+        Guid token, string? text, CancellationToken ct)
     {
         var state = Lookup(token);
 
@@ -182,7 +183,7 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
             ?? throw new VocabException("That word no longer exists.");
 
         var expected = Answer(word, state.Direction);
-        var (correct, note) = Judge(word, state.Direction, expected, text, selectedWordId);
+        var (correct, note) = Judge(word, state.Direction, expected, text);
 
         // Answering the question the round asked a moment ago rather than the one on screen is a
         // slip of attention, not a gap in knowledge. It gets one free retry, and nothing about
@@ -211,15 +212,19 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
     }
 
     private static (bool Correct, string? Note) Judge(
-        VocabWord word, VocabDirection direction, string expected, string? text, int? selectedWordId)
+        VocabWord word, VocabDirection direction, string expected, string? text)
     {
-        if (!IsTyped(direction))
-            return (selectedWordId == word.Id, null);
-
         var given = text ?? "";
 
         return direction switch
         {
+            // Assembled from tiles: right characters in the wrong order is a different mistake
+            // from the wrong characters, and worth saying so
+            VocabDirection.PinyinToCharacters or VocabDirection.EnglishToCharacters =>
+                given.Trim() == word.Characters
+                    ? (true, null)
+                    : (false, SameCharacters(word.Characters, given) ? "Right characters, wrong order." : null),
+
             VocabDirection.CharactersToPinyin or VocabDirection.EnglishToPinyin =>
                 AnswerCheck.PinyinMatches(expected, given)
                     ? (true, null)
@@ -230,6 +235,10 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
             _ => (AnswerCheck.EnglishMatches(expected, given), null),
         };
     }
+
+    private static bool SameCharacters(string expected, string given) =>
+        TileBank.Characters(expected).OrderBy(c => c, StringComparer.Ordinal)
+            .SequenceEqual(TileBank.Characters(given.Trim()).OrderBy(c => c, StringComparer.Ordinal));
 
     /// <summary>
     /// Names the form the answer actually belongs to when it is right about this word but in the
@@ -263,7 +272,7 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
             new QuestionState { WordId = word.Id, Direction = direction },
             TokenLifetime);
 
-        var options = IsTyped(direction) ? null : BuildOptions(word, pool);
+        var tiles = IsTyped(direction) ? null : TileBank.Build(word, pool);
 
         return new VocabQuestion(
             token,
@@ -272,37 +281,7 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
             Label(PromptForm(direction)),
             Label(AnswerForm(direction)),
             IsTyped(direction),
-            options);
-    }
-
-    /// <summary>
-    /// Wrong options are the closest words by single-character edits, reusing the listening
-    /// trainer's rule so the choice turns on what actually differs. Options are deduplicated by
-    /// characters — 行/xing2 beside 行/hang2 would look identical on screen and be unanswerable.
-    /// </summary>
-    private static List<VocabOption> BuildOptions(VocabWord word, List<VocabWord> pool)
-    {
-        var seen = new HashSet<string> { word.Characters };
-        var distractors = new List<VocabWord>();
-
-        var candidates = pool
-            .Where(w => w.Id != word.Id)
-            .OrderBy(w => SentenceSimilarity.Distance(word.Characters, w.Characters))
-            .ThenBy(_ => Random.Shared.Next());
-
-        foreach (var candidate in candidates)
-        {
-            if (!seen.Add(candidate.Characters)) continue;
-
-            distractors.Add(candidate);
-            if (distractors.Count == OptionCount - 1) break;
-        }
-
-        return distractors
-            .Append(word)
-            .OrderBy(_ => Random.Shared.Next())
-            .Select(w => new VocabOption(w.Id, w.Characters))
-            .ToList();
+            tiles);
     }
 
     private sealed record PromptIndex(
