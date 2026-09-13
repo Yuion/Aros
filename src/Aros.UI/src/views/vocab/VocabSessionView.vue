@@ -70,6 +70,9 @@
               @click="place(i)"
             >
               {{ tile }}
+              <!-- The number never moves, even once the tile is spent: a key that meant 早 a
+                   moment ago must not come to mean 在 -->
+              <span class="key">{{ i + 1 }}</span>
             </button>
           </li>
         </ul>
@@ -78,6 +81,11 @@
           <button v-if="!answer" class="ghost" :disabled="!built.length" @click="clearBuilt">Clear</button>
           <button v-if="!answer" class="primary" :disabled="!built.length" @click="submitBuilt">Check</button>
         </div>
+
+        <p v-if="!answer" class="keys-hint">
+          Keys <strong>1–{{ current.tiles.length }}</strong> place · <strong>Backspace</strong> takes
+          back · <strong>Enter</strong> checks
+        </p>
       </div>
 
       <!-- Right word, wrong form — one free retry, and nothing given away -->
@@ -193,6 +201,38 @@ async function submitBuilt() {
   await send({ text: built.value.join('') })
 }
 
+/**
+ * A tile round with no mouse. Typed directions are left alone: the input has the focus there and
+ * a digit is a tone number, so "hao3" must never be read as "place tile 3".
+ */
+function onKey(event) {
+  if (loading.value || finished.value || answer.value || retry.value) return
+  if (!current.value || current.value.typed) return
+  if (event.ctrlKey || event.altKey || event.metaKey) return
+
+  if (event.key >= '1' && event.key <= '9') {
+    place(Number(event.key) - 1)
+    event.preventDefault()
+    return
+  }
+
+  if (event.key === 'Backspace') {
+    takeBack(used.value.length - 1)
+    event.preventDefault()               // otherwise the browser treats it as Back
+    return
+  }
+
+  if (event.key === 'Escape') {
+    clearBuilt()
+    return
+  }
+
+  if (event.key === 'Enter') {
+    submitBuilt()
+    event.preventDefault()
+  }
+}
+
 async function send(payload) {
   try {
     const result = await api.post('/vocab/answer', { token: current.value.token, ...payload })
@@ -242,8 +282,14 @@ async function next() {
   await focusField()
 }
 
-onMounted(load)
-onUnmounted(() => clearTimeout(advance))
+onMounted(() => {
+  window.addEventListener('keydown', onKey)
+  load()
+})
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKey)
+  clearTimeout(advance)
+})
 </script>
 
 <style scoped>
@@ -412,6 +458,7 @@ onUnmounted(() => clearTimeout(advance))
 }
 
 .tile {
+  position: relative;
   font-family: inherit;
   font-size: 1.7rem;
   line-height: 1;
@@ -437,6 +484,32 @@ onUnmounted(() => clearTimeout(advance))
 
 .tile:disabled {
   cursor: default;
+}
+
+/* Small enough to ignore when you are using the mouse, there when you want it */
+.key {
+  position: absolute;
+  top: 0.1rem;
+  right: 0.22rem;
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: #b8bcc4;
+  line-height: 1;
+}
+
+.tile:hover:not(:disabled) .key {
+  color: #6d5bd0;
+}
+
+.keys-hint {
+  text-align: center;
+  font-size: 0.7rem;
+  color: #9ca3af;
+}
+
+.keys-hint strong {
+  font-weight: 600;
+  color: #6b7280;
 }
 
 .tile-actions {

@@ -25,7 +25,12 @@
         <span class="tally">{{ correctCount }} correct</span>
       </header>
 
-      <button class="listen" title="Play the clip" @click="replay">🔊</button>
+      <div class="listen-row">
+        <button class="listen" title="Play the clip" @click="replay()">🔊</button>
+        <!-- Same recording, slower. Mishearing a tone is a hearing problem, not a knowledge one,
+             and the fix is to hear it again with room between the syllables. -->
+        <button class="slow" title="Play it slowly" @click="replay(SLOW)">🐢 {{ SLOW }}×</button>
+      </div>
 
       <p class="mode-label">{{ MODE_LABELS[mode] }}</p>
 
@@ -95,6 +100,9 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { api } from '@/services/api'
 import { clip, prefetch, release } from '@/services/audio'
+
+/** Slow enough to separate the syllables, fast enough to still sound like speech. */
+const SLOW = 0.7
 
 // Long enough to register the ✓, short enough that typing does not stall on it
 const CORRECT_PAUSE = 1000
@@ -172,7 +180,7 @@ async function loadQuiz() {
   }
 }
 
-async function replay() {
+async function replay(rate = 1) {
   const el = player.value
   if (!el || !current.value) return
 
@@ -184,6 +192,7 @@ async function replay() {
 
     el.pause()
     el.src = src
+    el.playbackRate = rate
     // Autoplay can be refused before the page has seen a gesture — the 🔊 button is the fallback
     await el.play()
   } catch {
@@ -311,6 +320,30 @@ onUnmounted(() => {
 
 .tally {
   font-weight: 600;
+  color: #6d5bd0;
+}
+
+.listen-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+}
+
+.slow {
+  font-family: inherit;
+  font-size: 0.8rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: white;
+  color: #4b5563;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.slow:hover {
+  border-color: #6d5bd0;
   color: #6d5bd0;
 }
 
