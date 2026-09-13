@@ -57,60 +57,6 @@
         </template>
       </p>
 
-      <!-- The same thing in volume -->
-      <section class="card">
-        <button class="area-head" @click="showDump = !showDump">
-          <span class="caret">{{ showDump ? '▾' : '▸' }}</span> Paste a batch
-        </button>
-
-        <div v-if="showDump" class="area-body">
-          <p class="card-note">
-            Paste the table — Chinese, pinyin, English. A word already held under the same pinyin
-            has its meaning updated; one held under a <em>different</em> reading is reported rather
-            than overwritten, so 行/xing2 never quietly replaces 行/hang2. Nothing pasted here waits
-            in review — writing it out is the review.
-          </p>
-
-          <textarea
-            v-model="dump"
-            rows="6"
-            class="dump"
-            placeholder="| 我 | wo3 | I / me |"
-            :disabled="pasting"
-            @input="preview = null"
-          />
-
-          <div class="import-row">
-            <button class="add-btn" :disabled="pasting || !dump.trim()" @click="checkDump">Check</button>
-            <button
-              v-if="preview && preview.parsed"
-              class="add-btn primary-btn"
-              :disabled="pasting"
-              @click="runImport"
-            >
-              {{ pasting ? 'Importing…' : `Import ${preview.parsed}` }}
-            </button>
-          </div>
-
-          <p v-if="report" class="preview" :class="{ done: report.applied }">
-            <template v-if="!report.parsed">No Chinese found in that text.</template>
-            <template v-else>
-              {{ report.parsed }} rows · <strong>{{ report.added }} new</strong> ·
-              {{ report.updated }} updated · {{ report.unchanged }} already right
-              <template v-if="report.skipped">· {{ report.skipped }} skipped</template>
-            </template>
-          </p>
-
-          <ul v-if="report && report.conflicts.length" class="conflicts">
-            <li v-for="c in report.conflicts" :key="c.characters + c.pinyin">
-              <span lang="zh">{{ c.characters }}</span> — held as
-              <strong>{{ c.heldPinyin }}</strong>, your row says <strong>{{ c.pinyin }}</strong>.
-              Edit the entry below, or delete it and paste again.
-            </li>
-          </ul>
-        </div>
-      </section>
-
       <audio ref="player" />
 
       <p v-if="!ready.length" class="placeholder">
@@ -376,15 +322,6 @@ async function speak(word) {
   }
 }
 
-const showDump = ref(false)
-const dump = ref('')
-const preview = ref(null)
-const applied = ref(null)
-const pasting = ref(false)
-
-// The preview and the result read the same, so one shape drives the summary line
-const report = computed(() => applied.value ?? preview.value)
-
 const ROUND_MODES = [
   { id: 'sweep', label: 'Everything', sweep: true },
   { id: 'sample', label: 'Short round', sweep: false },
@@ -426,35 +363,6 @@ const selected = computed(() => {
     nextDue: rows.find((r) => r.nextDueAt === due)?.nextDue ?? '',
   }
 })
-
-async function checkDump() {
-  error.value = ''
-  applied.value = null
-
-  try {
-    preview.value = await api.post('/vocab/import/preview', { text: dump.value })
-  } catch (e) {
-    error.value = e.message
-  }
-}
-
-async function runImport() {
-  error.value = ''
-  pasting.value = true
-
-  try {
-    applied.value = { ...(await api.post('/vocab/import', { text: dump.value })), applied: true }
-    preview.value = null
-
-    // Conflicts are the reason to keep the text: fix the entry, paste the same table again
-    if (!applied.value.conflicts.length) dump.value = ''
-    await load()
-  } catch (e) {
-    error.value = e.message
-  } finally {
-    pasting.value = false
-  }
-}
 
 async function load() {
   try {
@@ -608,106 +516,12 @@ h1 {
   opacity: 0.85;
 }
 
-.area-head {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  width: 100%;
-  font-family: inherit;
-  font-size: 1rem;
-  font-weight: 600;
-  color: #1a1a1a;
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  text-align: left;
-}
-
 .caret {
   color: #9ca3af;
   font-size: 0.8rem;
 }
 
-.area-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  margin-top: 0.7rem;
-}
-
-.dump {
-  width: 100%;
-  padding: 0.6rem 0.7rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.85rem;
-  border: 2px solid #e5e7eb;
-  border-radius: 8px;
-  background: white;
-  color: #1a1a1a;
-  resize: vertical;
-}
-
-.dump:focus {
-  outline: none;
-  border-color: #cba6f7;
-}
-
-.import-row {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.primary-btn {
-  color: white;
-  background: #6d5bd0;
-  border-color: #6d5bd0;
-}
-
-.preview {
-  font-size: 0.82rem;
-  color: #4b5563;
-}
-
-.preview.done {
-  color: #15803d;
-}
-
 /* A second reading is a decision, not an error — say what is held and let it be settled */
-.conflicts {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.8rem;
-  color: #92400e;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: 8px;
-  padding: 0.6rem 0.7rem;
-}
-
-.conflicts span {
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-.add-btn {
-  padding: 0.5rem 1rem;
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: white;
-  background: #6d5bd0;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.add-btn:disabled {
-  background: #c7c4d6;
-  cursor: not-allowed;
-}
 
 .start-options {
   display: flex;
@@ -1054,8 +868,6 @@ h1 {
   background: #fef2f2;
   color: #b91c1c;
 }
-
-
 
 @media (max-width: 560px) {
   .direction {

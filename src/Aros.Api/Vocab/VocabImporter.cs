@@ -17,9 +17,9 @@ public record VocabImportResult(
     IReadOnlyList<VocabConflict> Conflicts);
 
 /// <summary>
-/// Takes vocabulary from a pasted table, the same shape the sentences use. Words arrive already
-/// judged — you wrote or checked the reading yourself — so nothing imported here waits in the
-/// review queue.
+/// Takes vocabulary from a table the tutor wrote, offered by the Import button on its message.
+/// Those land in the review queue: a plausible wrong tone is exactly what a model gets wrong, and
+/// a word drilled wrong is learned wrong.
 ///
 /// Matching is on characters **and** pinyin, so 行/xing2 and 行/hang2 stay separate, separately
 /// scored entries. A row whose characters are held under a different reading is reported rather
@@ -28,18 +28,15 @@ public record VocabImportResult(
 /// </summary>
 public class VocabImporter(AppDbContext db)
 {
-    public Task<VocabImportResult> PreviewAsync(string? text, CancellationToken ct) =>
-        RunAsync(text, apply: false, needsReview: false, ct);
-
     /// <param name="needsReview">
     /// False when you typed the table out — writing it is the review. True for anything a model
     /// produced: a plausible-looking wrong tone is exactly what it gets wrong, and once drilled in
     /// it is learned wrong. The queue already exists and already holds flagged words out of tests.
     /// </param>
     public Task<VocabImportResult> ImportAsync(string? text, CancellationToken ct, bool needsReview = false) =>
-        RunAsync(text, apply: true, needsReview, ct);
+        RunAsync(text, needsReview, ct);
 
-    private async Task<VocabImportResult> RunAsync(string? text, bool apply, bool needsReview, CancellationToken ct)
+    private async Task<VocabImportResult> RunAsync(string? text, bool needsReview, CancellationToken ct)
     {
         var rows = TableDump.Parse(text);
 
@@ -67,7 +64,7 @@ public class VocabImporter(AppDbContext db)
             if (!byCharacters.TryGetValue(characters, out var existing))
             {
                 added++;
-                if (apply) Add(byCharacters, characters, pinyin, english, needsReview);
+                Add(byCharacters, characters, pinyin, english, needsReview);
                 continue;
             }
 
@@ -80,13 +77,10 @@ public class VocabImporter(AppDbContext db)
                 }
 
                 updated++;
-                if (apply)
-                {
-                    match.Pinyin = pinyin;
-                    match.English = english;
-                    match.NeedsReview = needsReview;
-                    match.ReadingAlternatives = null;
-                }
+                match.Pinyin = pinyin;
+                match.English = english;
+                match.NeedsReview = needsReview;
+                match.ReadingAlternatives = null;
 
                 continue;
             }
@@ -94,7 +88,7 @@ public class VocabImporter(AppDbContext db)
             conflicts.Add(new VocabConflict(characters, pinyin, string.Join(" / ", existing.Select(w => w.Pinyin))));
         }
 
-        if (apply) await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(ct);
 
         return new VocabImportResult(rows.Count, added, updated, unchanged, skipped, conflicts);
     }

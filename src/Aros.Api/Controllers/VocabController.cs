@@ -167,11 +167,6 @@ public class VocabController(AppDbContext db, VocabService vocab, VocabImporter 
         return File(tts.OpenFile(word.AudioLocation), "audio/mpeg", enableRangeProcessing: true);
     }
 
-    /// <summary>What a pasted table would do, without writing anything.</summary>
-    [HttpPost("import/preview")]
-    public async Task<IActionResult> ImportPreview([FromBody] VocabDumpRequest request, CancellationToken ct) =>
-        Ok(Describe(await dump.PreviewAsync(request.Text, ct)));
-
     /// <summary>
     /// Import a pasted table of words. Matching is on characters and pinyin, so a second reading of
     /// the same character is reported rather than silently replacing the first.
