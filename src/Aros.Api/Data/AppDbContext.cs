@@ -31,9 +31,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasIndex(w => new { w.Characters, w.Pinyin }).IsUnique();
             entity.HasIndex(w => w.Characters);
 
-            // Stated for the database, not just for C#: a property initialiser is invisible to a
-            // migration, so without this every word already in the pool is added as retired.
-            entity.Property(w => w.Active).HasDefaultValue(true);
         });
 
         modelBuilder.Entity<VocabProgress>(entity =>

@@ -158,7 +158,7 @@ public class TurnRunner(
         }
 
         var known = CharacterBank.KnownCharacters(
-            await db.VocabWords.AsNoTracking().Where(w => !w.NeedsReview && w.Active).ToListAsync(ct));
+            await db.VocabWords.AsNoTracking().Where(w => !w.NeedsReview).ToListAsync(ct));
 
         var bank = CharacterBank.Build(items, known);
         var missing = CharacterBank.MissingFrom(bank, items);

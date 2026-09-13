@@ -36,17 +36,10 @@ public class VocabWord
     public int? IntroducedInLesson { get; set; }
 
     /// <summary>
-    /// False retires a word from the trainers without deleting it — the history stays readable and
-    /// the lesson that introduced it still makes sense. Deleting is still available and still final.
-    /// </summary>
-    public bool Active { get; set; } = true;
-
-    /// <summary>
     /// Retired by hand: a word you know, taken out of the trainer without deleting it. It counts
     /// as mastered in every direction however its streaks stand, stays in the tutor's known
     /// vocabulary — a word you have finished with is still a word you know — and goes straight
-    /// back into rotation when this is cleared. <see cref="Active"/> is the other thing: a word
-    /// withdrawn from the course entirely.
+    /// back into rotation when this is cleared.
     /// </summary>
     public DateTime? RetiredAt { get; set; }
 

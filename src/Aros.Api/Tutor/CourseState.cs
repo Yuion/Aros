@@ -29,7 +29,7 @@ public class CourseState(AppDbContext db)
 
         var words = await db.VocabWords
             .Include(w => w.Progress)
-            .Where(w => !w.NeedsReview && w.Active)
+            .Where(w => !w.NeedsReview)
             .AsNoTracking()
             .OrderBy(w => w.CreatedAt)
             .ToListAsync(ct);
