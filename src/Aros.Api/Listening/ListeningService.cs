@@ -65,10 +65,7 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     public async Task<Quiz> BuildQuizAsync(
         int questionCount, ListeningMode mode, bool sweep, CancellationToken ct)
     {
-        var clips = await db.TtsClips
-            .Include(c => c.Stats)
-            .AsNoTracking()
-            .ToListAsync(ct);
+        var clips = await AudibleClipsAsync(ct);
 
         var groups = await db.HomophoneGroups.AsNoTracking().ToListAsync(ct);
 
@@ -110,7 +107,7 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     /// </summary>
     public async Task<Quiz> BuildDrillAsync(IReadOnlyList<int> clipIds, ListeningMode mode, CancellationToken ct)
     {
-        var clips = await db.TtsClips.Include(c => c.Stats).AsNoTracking().ToListAsync(ct);
+        var clips = await AudibleClipsAsync(ct);
         var groups = await db.HomophoneGroups.AsNoTracking().ToListAsync(ct);
         var audible = mode == ListeningMode.Characters ? AudibleForms(clips, groups) : null;
 
@@ -126,6 +123,17 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
 
         return new Quiz(mode, questions);
     }
+
+    /// <summary>
+    /// The sentences that can be heard. One kept without audio — a synthesis that failed — is not
+    /// a question anyone can answer, so it waits in the library until it has a voice.
+    /// </summary>
+    private Task<List<TtsClip>> AudibleClipsAsync(CancellationToken ct) =>
+        db.TtsClips
+            .Include(c => c.Stats)
+            .Where(c => c.Location != "")
+            .AsNoTracking()
+            .ToListAsync(ct);
 
     public async Task<TtsClip> GetClipForTokenAsync(Guid token, CancellationToken ct)
     {
@@ -415,7 +423,7 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     /// </summary>
     public async Task<IReadOnlyList<Availability>> AvailabilityAsync(CancellationToken ct)
     {
-        var clips = await db.TtsClips.Include(c => c.Stats).AsNoTracking().ToListAsync(ct);
+        var clips = await AudibleClipsAsync(ct);
         var audible = await AudibleFormsAsync(clips, ct);
 
         return

@@ -180,37 +180,66 @@ public class CourseImporter(
         if (failed.Count > 0 && !ct.IsCancellationRequested)
         {
             logger.LogWarning("{Count} sentence(s) failed; trying again in {Delay}s", failed.Count, SecondPassDelay.TotalSeconds);
-            await Task.Delay(SecondPassDelay, ct);
 
-            var (more, stillFailing) = await SpeakAsync(failed, ct);
-            added += more;
-            failed = stillFailing;
+            try
+            {
+                await Task.Delay(SecondPassDelay, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                // Nothing left to wait for; the sentences are still kept below
+            }
+
+            if (!ct.IsCancellationRequested)
+            {
+                var (more, stillFailing) = await SpeakAsync(failed, ct);
+                added += more;
+                failed = stillFailing;
+            }
         }
 
+        // Kept rather than lost: the sentence, its reading and its meaning go into the library
+        // without a voice, and the TTS page can speak them in one press later
         foreach (var row in failed)
-            notes.Add($"{row.Chinese} could not be synthesized — add it in Chinese TTS.");
+            await tts.KeepSilentAsync(row.Chinese, row.Pinyin, row.English, CancellationToken.None);
 
         if (failed.Count > 0)
-            notes.Add($"{failed.Count} sentence(s) were skipped. Everything else in the lesson was saved.");
+            notes.Add(
+                $"{failed.Count} sentence(s) could not be spoken and are held without audio — "
+                + "open Chinese TTS and press \"Speak the missing\". Everything else was saved.");
 
         return added;
     }
+
+    /// <summary>Consecutive failures that mean the service is down rather than the sentence is odd.</summary>
+    private const int OutageAfter = 2;
 
     private async Task<(int Added, List<(string Chinese, string Pinyin, string English)> Failed)> SpeakAsync(
         List<(string Chinese, string Pinyin, string English)> rows, CancellationToken ct)
     {
         var added = 0;
         var failed = new List<(string, string, string)>();
+        var inARow = 0;
 
         foreach (var row in rows)
         {
             // Asked to stop is not a failure to report: the rest simply do not happen
             if (ct.IsCancellationRequested) { failed.Add(row); continue; }
 
+            // Two in a row is an outage, not a difficult sentence. Each attempt can run to the
+            // sixty-second timeout and is tried three times, so carrying on through ten sentences
+            // costs half an hour and fails all ten anyway — while the browser gave up long ago.
+            if (inARow >= OutageAfter)
+            {
+                failed.Add(row);
+                continue;
+            }
+
             try
             {
                 var (_, cached) = await tts.GetOrCreateAsync(row.Chinese, row.Pinyin, row.English, ct);
                 if (!cached) added++;
+                inARow = 0;
             }
             catch (Exception ex)
             {
@@ -219,8 +248,12 @@ public class CourseImporter(
                 // would lose a lesson that has already happened
                 logger.LogWarning(ex, "Sentence {Sentence} could not be synthesized", row.Chinese);
                 failed.Add(row);
+                inARow++;
             }
         }
+
+        if (inARow >= OutageAfter)
+            logger.LogWarning("Stopped synthesizing after {Count} failures in a row", inARow);
 
         return (added, failed);
     }

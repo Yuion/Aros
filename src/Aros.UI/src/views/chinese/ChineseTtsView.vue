@@ -121,6 +121,14 @@
         placeholder="Find a sentence, reading or meaning"
       />
 
+      <!-- A synthesis that failed leaves the sentence here without a voice -->
+      <p v-if="silent.length" class="notice silent">
+        {{ silent.length }} {{ silent.length === 1 ? 'sentence has' : 'sentences have' }} no audio yet.
+        <button class="link-btn" :disabled="speaking" @click="speakMissing">
+          {{ speaking ? 'Speaking…' : `Speak the missing ${silent.length}` }}
+        </button>
+      </p>
+
       <p v-if="!clips.length" class="empty">Nothing yet. Speak a sentence to start your library.</p>
       <p v-else-if="!shown.length" class="empty">{{ nothingShown }}</p>
 
@@ -131,7 +139,8 @@
           <div class="clip-head" @click="expand(clip.id)">
             <button class="icon-btn" title="Play" @click.stop="play(clip.audioUrl)">▶</button>
             <span class="clip-sentence" lang="zh">{{ clip.sentence }}</span>
-            <span v-if="clip.retiredAt" class="tag">retired</span>
+            <span v-if="!clip.hasAudio" class="tag silent-tag">no audio</span>
+            <span v-else-if="clip.retiredAt" class="tag">retired</span>
             <span v-else-if="clip.correct || clip.wrong" class="score">
               {{ clip.correct }}✓ / {{ clip.wrong }}✗
             </span>
@@ -233,6 +242,30 @@ const sort = ref('added')
 const descending = ref(true)
 const opened = ref(null)
 const retiring = ref(null)
+const speaking = ref(false)
+
+const silent = computed(() => clips.value.filter((c) => !c.hasAudio))
+
+/** One paid call per sentence, so the count is in the button rather than behind it. */
+async function speakMissing() {
+  if (speaking.value) return
+  if (!window.confirm(`Speak ${silent.value.length} sentences? That is ${silent.value.length} synthesis calls.`)) return
+
+  speaking.value = true
+  error.value = ''
+
+  try {
+    const result = await api.post('/tts/clips/audio/missing')
+    importReport.value = result.failures.length
+      ? `${result.spoken} spoken, ${result.failures.length} still failing.`
+      : `${result.spoken} spoken.`
+    await loadClips()
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    speaking.value = false
+  }
+}
 
 const shown = computed(() =>
   arrange(clips.value, {
@@ -598,6 +631,36 @@ textarea:focus {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+}
+
+.notice.silent {
+  font-size: 0.8rem;
+  color: #92400e;
+  background: #fffbeb;
+  border-radius: 7px;
+  padding: 0.45rem 0.65rem;
+  margin-bottom: 0.6rem;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 0.8rem;
+  color: #92400e;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.link-btn:disabled {
+  color: #b8bcc4;
+  cursor: default;
+}
+
+.tag.silent-tag {
+  color: #92400e;
+  background: #fffbeb;
 }
 
 .of {

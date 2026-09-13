@@ -92,6 +92,56 @@ public class TtsService(
     }
 
     /// <summary>
+    /// Keeps a sentence that could not be spoken: the text and its readings, with no audio.
+    ///
+    /// A synthesis that fails during a lesson save would otherwise lose the sentence entirely —
+    /// it exists only inside the write-up, which nothing shows once the lesson is saved. Held this
+    /// way it is visible in the library, held out of the listening trainer until it has a voice,
+    /// and one press of "Speak the missing" away from being finished.
+    /// </summary>
+    public async Task<TtsClip?> KeepSilentAsync(
+        string? rawText, string? pinyin, string? english, CancellationToken ct)
+    {
+        var sentence = ChineseText.Normalize(rawText);
+        if (sentence.Length == 0 || sentence.Length > _options.MaxCharacters) return null;
+
+        var existing = await FindBySentenceAsync(sentence, ct);
+
+        if (existing is not null)
+        {
+            if (FillBlanks(existing, pinyin, english)) await db.SaveChangesAsync(ct);
+            return existing;
+        }
+
+        var clip = new TtsClip
+        {
+            Sentence = sentence,
+            Location = "",                      // what makes it silent
+            Voice = "",
+            Pinyin = Clean(pinyin),
+            English = Clean(english),
+        };
+
+        db.TtsClips.Add(clip);
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            db.Entry(clip).State = EntityState.Detached;
+            return await FindBySentenceAsync(sentence, ct);
+        }
+
+        return clip;
+    }
+
+    /// <summary>Every sentence held without audio, oldest first.</summary>
+    public Task<List<TtsClip>> SilentAsync(CancellationToken ct) =>
+        db.TtsClips.Where(c => c.Location == "").OrderBy(c => c.Id).ToListAsync(ct);
+
+    /// <summary>
     /// Fills a blank reading, never overwrites one. A sentence imported twice with two different
     /// translations keeps the first: silently rewriting the answer of something already practised
     /// would score past answers against text they were never judged on.

@@ -158,6 +158,7 @@ public class TtsController(AppDbContext db, TtsService tts) : ControllerBase
         durationSeconds = clip.DurationSeconds,
         createdAt = clip.CreatedAt,
         retiredAt = clip.RetiredAt,
+        hasAudio = clip.Location.Length > 0,
         correct = clip.Stats.Sum(s => s.CorrectCount),
         wrong = clip.Stats.Sum(s => s.WrongCount),
         modes = Modes(clip),
@@ -190,6 +191,34 @@ public class TtsController(AppDbContext db, TtsService tts) : ControllerBase
         ListeningMode.English => clip.English.Length > 0,
         _ => true,
     };
+
+    /// <summary>
+    /// Speaks every sentence held without audio — the ones a failed synthesis left behind. One
+    /// paid call each, so the count is worth knowing first, and a failure leaves that sentence
+    /// exactly as it was rather than losing the rest.
+    /// </summary>
+    [HttpPost("clips/audio/missing")]
+    public async Task<IActionResult> SpeakMissing(CancellationToken ct)
+    {
+        var silent = await tts.SilentAsync(ct);
+        var spoken = 0;
+        var failures = new List<object>();
+
+        foreach (var clip in silent)
+        {
+            try
+            {
+                var (_, cached) = await tts.GetOrCreateAsync(clip.Sentence, clip.Pinyin, clip.English, ct);
+                if (!cached) spoken++;
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                failures.Add(new { sentence = clip.Sentence, message = ex.Message });
+            }
+        }
+
+        return Ok(new { silent = silent.Count, spoken, failures });
+    }
 
     [HttpGet("clips/{id:int}/audio")]
     public async Task<IActionResult> Audio(int id, CancellationToken ct)
