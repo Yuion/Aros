@@ -12,7 +12,7 @@
         <StatTile label="Practised" :value="data.totals.practised" :of="data.totals.withDrills"
                   :note="`${data.totals.neverPractised} never produced cold`" />
         <StatTile label="Drills" :value="data.totals.drills" small
-                  :note="`from lessons · ${data.totals.noDrills} patterns have none`" />
+                  :note="noDrillsNote" />
       </section>
 
       <p v-if="!data.totals.answers" class="placeholder">
@@ -117,6 +117,12 @@ function shade(index, count) {
 const data = ref(null)
 const loading = ref(true)
 const error = ref('')
+
+const noDrillsNote = computed(() => {
+  const n = data.value?.totals.noDrills ?? 0
+
+  return n === 1 ? 'from lessons · 1 pattern has none' : `from lessons · ${n} patterns have none`
+})
 
 const needsWorkRows = computed(() =>
   (data.value?.needsWork ?? []).map((row, i) => ({
