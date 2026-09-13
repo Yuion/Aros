@@ -42,6 +42,7 @@
       Lesson under way — {{ state.runtime.minutesElapsed }} of
       {{ state.runtime.minutesRequested }} minutes,
       {{ state.runtime.exercisesSent }} {{ state.runtime.exercisesSent === 1 ? 'exercise' : 'exercises' }} set.
+      <span v-if="state.runtime.plan" class="plan">{{ state.runtime.plan }}</span>
     </p>
 
     <p v-if="state && !state.configured" class="notice">{{ state.problem }}</p>
@@ -744,6 +745,14 @@ h1 {
 
 .length:hover:not(:disabled) {
   border-color: #6d5bd0;
+}
+
+/* The plan is the one line that says what this hour is for */
+.plan {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.78rem;
+  color: #4b5563;
 }
 
 .notice.running {

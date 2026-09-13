@@ -51,6 +51,7 @@ public record LessonSection(
     [property: JsonPropertyName("date")] string? Date,
     [property: JsonPropertyName("duration_minutes")] int? DurationMinutes,
     [property: JsonPropertyName("summary")] string? Summary,
+    [property: JsonPropertyName("plan")] string? Plan,
     [property: JsonPropertyName("next_recommended_topic")] string? NextRecommendedTopic,
     [property: JsonPropertyName("new_vocabulary")] List<JsonElement>? NewVocabulary,
     [property: JsonPropertyName("new_grammar")] List<JsonElement>? NewGrammar,
@@ -250,6 +251,7 @@ public class CourseImporter(AppDbContext db)
             lesson.Date = ParseDate(item.Date, notes, item.Number);
             lesson.DurationMinutes = item.DurationMinutes;
             lesson.Summary = item.Summary ?? "";
+            lesson.Plan = item.Plan ?? lesson.Plan;
             lesson.NextRecommendedTopic = item.NextRecommendedTopic ?? "";
             lesson.NewVocabulary = Lines(item.NewVocabulary) ?? [];
             lesson.NewGrammar = Lines(item.NewGrammar) ?? [];

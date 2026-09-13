@@ -60,7 +60,8 @@ public class LessonRecorder(
         // What the application watched happen, so the write-up is not purely from recall
         var runtime = await runtimeService.CurrentAsync(ct);
         request = string.Join(Environment.NewLine + Environment.NewLine,
-            request, LessonRuntimeService.Describe(runtime));
+            request,
+            LessonRuntimeService.Describe(runtime, await runtimeService.TypesUsedAsync(runtime, ct)));
 
         // The shape is enforced by the API, not merely requested: with a schema attached the model
         // cannot return prose, a code fence, or a field that is missing or misspelled.

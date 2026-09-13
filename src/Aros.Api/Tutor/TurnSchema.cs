@@ -22,6 +22,24 @@ public static class TurnSchema
         "ANSWER_USER_QUESTION",
     ];
 
+    /// <summary>
+    /// The shapes an exercise can take. Left as free text, every lesson became English sentences
+    /// to translate: of 47 exercises set before this list existed, all but one were
+    /// english_to_chinese or pinyin. A closed list is the only thing that makes the other shapes
+    /// visible to the model at the moment it chooses one.
+    /// </summary>
+    public static readonly string[] ExerciseTypes =
+    [
+        "english_to_chinese",       // produce the sentence
+        "chinese_to_english",       // show you understood it
+        "pinyin",                   // write the reading, tones included
+        "tone",                     // the tones alone, for a sentence already read
+        "error_correction",         // here is a wrong sentence; say what is wrong and fix it
+        "transformation",           // statement to question, positive to negative, add 也
+        "constrained",              // say it again, but using 要 / without 想
+        "answer_in_chinese",        // a question asked in Chinese, answered in Chinese
+    ];
+
     public static JsonSchema Definition { get; } = new("tutor_turn", Build());
 
     private static JsonObject Build() => Object(new JsonObject
@@ -35,7 +53,10 @@ public static class TurnSchema
 
         ["exercise"] = Nullable(Object(new JsonObject
         {
-            ["type"] = Text("english_to_chinese, chinese_to_english, pinyin, tone, or similar."),
+            ["type"] = Enum(
+                ExerciseTypes,
+                "The shape of this exercise. Vary it: a lesson of nothing but english_to_chinese "
+                + "tests one skill five times."),
             ["instructions"] = Text("One line telling the learner what to do."),
             ["items"] = Array(Object(new JsonObject
             {
@@ -53,6 +74,13 @@ public static class TurnSchema
         ["new_grammar_this_turn"] = Array(
             Text("Grammar patterns introduced in this message, if any.")),
 
+        ["lesson_plan"] = Nullable(
+            Text(
+                "One line, only on the first turn of a lesson: what this lesson will cover and "
+                + "what it will leave alone. Ignored afterwards — the plan is fixed once set, and "
+                + "the write-up reports against it."),
+            "The plan for this lesson, or null on every turn after the first."),
+
         ["lesson_complete"] = Boolean(
             "True only when this turn ends the lesson."),
     });
@@ -68,7 +96,7 @@ public static class TurnSchema
 
     private static JsonObject Nullable(JsonObject shape, string description)
     {
-        shape["type"] = new JsonArray("object", "null");
+        shape["type"] = new JsonArray(shape["type"]?.GetValue<string>() ?? "object", "null");
         shape["description"] = description;
         return shape;
     }

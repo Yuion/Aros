@@ -291,6 +291,7 @@ public class StatsController(
             date = lesson.Date,
             durationMinutes = lesson.DurationMinutes,
             summary = lesson.Summary,
+            plan = lesson.Plan,
             nextRecommendedTopic = lesson.NextRecommendedTopic,
             mistakes = lesson.MistakeNotes,
             reinforced = lesson.Reinforced,

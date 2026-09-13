@@ -317,6 +317,7 @@ public class TutorController(
         minutesElapsed = runtime.StartedAt is { } at ? (int)(DateTime.UtcNow - at).TotalMinutes : (int?)null,
         exerciseKey = runtime.ExerciseKey,
         awaitingUserAnswer = runtime.AwaitingUserAnswer,
+        plan = runtime.Plan,
         exercisesSent = runtime.ExercisesSentThisLesson.Count,
         newVocabulary = runtime.NewVocabularyThisLesson,
         newGrammar = runtime.NewGrammarThisLesson,

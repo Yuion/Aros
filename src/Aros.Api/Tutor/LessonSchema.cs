@@ -62,6 +62,9 @@ public static class LessonSchema
                 ["date"] = Text("YYYY-MM-DD."),
                 ["duration_minutes"] = Nullable("integer", "Minutes, or null if unknown."),
                 ["summary"] = Text("What happened, three or four sentences."),
+                ["plan"] = Text(
+                    "The plan this lesson opened with, copied from the runtime state, and whether "
+                    + "it was met. Empty if no plan was stated."),
                 ["new_vocabulary"] = Array(Text("Characters only, no pinyin or meaning.")),
                 ["new_grammar"] = Array(Text("Patterns introduced.")),
                 ["reinforced"] = Array(Text("What was practised again.")),

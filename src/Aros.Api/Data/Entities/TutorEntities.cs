@@ -120,6 +120,9 @@ public class Lesson
     public DateOnly Date { get; set; }
     public int? DurationMinutes { get; set; }
     public string Summary { get; set; } = "";
+
+    /// <summary>What the lesson set out to do, as stated at its start.</summary>
+    public string Plan { get; set; } = "";
     public string NextRecommendedTopic { get; set; } = "";
 
     // Recorded as written rather than as foreign keys: a lesson is a historical note, and it should
@@ -194,6 +197,13 @@ public class LessonRuntime
 
     public int? MinutesRequested { get; set; }
     public DateTime? StartedAt { get; set; }
+
+    /// <summary>
+    /// What this lesson set out to do, written once at the start and never rewritten. A lesson
+    /// that only ends when the clock runs out cannot be judged afterwards; one with a stated aim
+    /// can be, by you and by the write-up.
+    /// </summary>
+    public string Plan { get; set; } = "";
 }
 
 /// <summary>

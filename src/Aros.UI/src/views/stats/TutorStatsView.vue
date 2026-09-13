@@ -48,6 +48,7 @@
                 {{ lesson.date }}
                 <span v-if="lesson.durationMinutes" class="entry-length">· {{ lesson.durationMinutes }} min</span>
               </p>
+              <p v-if="lesson.plan" class="entry-plan">{{ lesson.plan }}</p>
               <p v-if="lesson.summary" class="entry-summary">{{ lesson.summary }}</p>
             </div>
           </header>
@@ -221,6 +222,12 @@ onMounted(async () => {
 
 .entry-length {
   color: #9ca3af;
+}
+
+.entry-plan {
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+  color: #6d5bd0;
 }
 
 .entry-summary {

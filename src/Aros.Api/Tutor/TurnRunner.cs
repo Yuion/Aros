@@ -20,7 +20,7 @@ public record TurnResult(ChatMessage Question, ChatMessage Answer, Exercise? Exe
 public class TurnRunner(
     AppDbContext db,
     OpenAiClient client,
-    CourseState courseState,
+    TutorService tutor,
     LessonRuntimeService runtimeService,
     ExerciseGuard guard,
     AiBudget budget,
@@ -192,6 +192,10 @@ public class TurnRunner(
 
         if (kind.Contains("to_english") || kind.Contains("pinyin") || kind.Contains("tone")) return false;
 
+        // Correcting a sentence means saying what is wrong with it, and a bank of the right
+        // characters would give that away before the learner has looked
+        if (kind.Contains("error_correction")) return false;
+
         // Falls back to the answers themselves: if they are Chinese, the learner must write Chinese
         return items.Any(i => i.ExpectedAnswer.Any(c => c >= 0x4E00 && c <= 0x9FFF));
     }
@@ -211,6 +215,8 @@ public class TurnRunner(
             Strings(turn["new_grammar_this_turn"]),
             ct);
 
+        await runtimeService.PlanAsync(runtime, turn["lesson_plan"]?.GetValue<string>(), ct);
+
         if (turn["lesson_complete"]?.GetValue<bool>() == true)
         {
             runtime.Phase = LessonPhase.Idle;
@@ -221,21 +227,11 @@ public class TurnRunner(
     private static IEnumerable<string> Strings(JsonNode? node) =>
         (node?.AsArray() ?? []).Select(n => n?.GetValue<string>() ?? "").Where(s => s.Length > 0);
 
-    /// <summary>The whole payload: how to teach, who the learner is, and what is happening now.</summary>
-    public async Task<string> InstructionsAsync(CancellationToken ct)
-    {
-        var (standing, state, runtime) = await PartsAsync(ct);
-        return string.Join("\n\n", standing, state, runtime);
-    }
-
-    public async Task<(string Standing, string State, string Runtime)> PartsAsync(CancellationToken ct)
-    {
-        var settings = await SettingsAsync(ct);
-        var state = await courseState.BuildAsync(ct);
-        var runtime = LessonRuntimeService.Describe(await runtimeService.CurrentAsync(ct));
-
-        return (settings.Instructions, state, runtime);
-    }
+    /// <summary>
+    /// The whole payload: how to teach, who the learner is, and what is happening now. Assembled
+    /// in one place only — the Context panel showed a second copy of this until the two disagreed.
+    /// </summary>
+    public Task<string> InstructionsAsync(CancellationToken ct) => tutor.InstructionsAsync(ct);
 
     private async Task<TutorSettings> SettingsAsync(CancellationToken ct)
     {

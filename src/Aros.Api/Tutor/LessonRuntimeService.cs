@@ -30,12 +30,22 @@ public class LessonRuntimeService(AppDbContext db)
     /// whether "1. 我想喝茶" is an answer to grade or a request to carry on, so it says which in
     /// as few words as possible.
     /// </summary>
-    public static string Describe(LessonRuntime runtime)
+    public static string Describe(LessonRuntime runtime) => Describe(runtime, []);
+
+    /// <param name="typesUsed">
+    /// The exercise shapes this lesson has already used. Passed in rather than stored: it is the
+    /// exercises themselves that know, and a second copy would drift.
+    /// </param>
+    public static string Describe(LessonRuntime runtime, IReadOnlyList<string> typesUsed)
     {
         var text = new StringBuilder();
         text.AppendLine("LESSON RUNTIME STATE (authoritative for what to do this turn)");
         text.AppendLine($"  lesson_id: {runtime.LessonId}");
         text.AppendLine($"  phase: {runtime.Phase.ToString().ToLowerInvariant()}");
+
+        text.AppendLine(runtime.Plan.Length > 0
+            ? $"  lesson_plan: {runtime.Plan}"
+            : "  lesson_plan: not set — state it this turn, in one line, and do not restate it later");
 
         if (runtime.CurrentTopic.Length > 0)
             text.AppendLine($"  current_topic: {runtime.CurrentTopic}");
@@ -55,6 +65,15 @@ public class LessonRuntimeService(AppDbContext db)
 
         if (runtime.ExercisesSentThisLesson.Count > 0)
             text.AppendLine($"  exercises_sent_this_lesson: {string.Join(", ", runtime.ExercisesSentThisLesson)}");
+
+        if (typesUsed.Count > 0)
+        {
+            text.AppendLine($"  exercise_types_used: {string.Join(", ", typesUsed)}");
+
+            // Naming the last one is what stops a third in a row: the model can see the repeat
+            // without counting back through the thread
+            text.AppendLine($"  last_exercise_type: {typesUsed[^1]} — the next one must be a different shape");
+        }
 
         if (runtime.NewVocabularyThisLesson.Count > 0)
             text.AppendLine($"  new_vocabulary_this_lesson: {string.Join(" ", runtime.NewVocabularyThisLesson)}");
@@ -97,6 +116,24 @@ public class LessonRuntimeService(AppDbContext db)
 
         await db.SaveChangesAsync(ct);
     }
+
+    /// <summary>Fixed once, at the start. A plan that could be rewritten mid-lesson is not a plan.</summary>
+    public async Task PlanAsync(LessonRuntime runtime, string? plan, CancellationToken ct)
+    {
+        if (runtime.Plan.Length > 0 || plan is not { Length: > 0 }) return;
+
+        runtime.Plan = plan.Trim();
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>The shapes this lesson has set, oldest first.</summary>
+    public async Task<List<string>> TypesUsedAsync(LessonRuntime runtime, CancellationToken ct) =>
+        await db.Exercises
+            .AsNoTracking()
+            .Where(e => e.LessonId == runtime.LessonId && e.Type != "")
+            .OrderBy(e => e.Id)
+            .Select(e => e.Type)
+            .ToListAsync(ct);
 
     public async Task ExerciseSentAsync(LessonRuntime runtime, Exercise exercise, CancellationToken ct)
     {
