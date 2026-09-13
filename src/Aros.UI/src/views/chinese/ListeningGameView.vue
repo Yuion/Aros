@@ -901,8 +901,19 @@ onUnmounted(() => {
 }
 
 .secondary {
+  font: inherit;
   font-size: 0.9rem;
   color: #6b7280;
   text-decoration: none;
+  padding: 0.6rem 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+}
+
+.secondary:hover {
+  border-color: #6d5bd0;
+  color: #6d5bd0;
 }
 </style>

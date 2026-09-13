@@ -412,10 +412,20 @@ onUnmounted(() => {
 }
 
 .secondary {
-  font-size: 0.85rem;
+  font: inherit;
+  font-size: 0.9rem;
   color: #6b7280;
   text-decoration: none;
-  padding: 0.55rem 1.1rem;
+  padding: 0.6rem 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+}
+
+.secondary:hover {
+  border-color: #6d5bd0;
+  color: #6d5bd0;
 }
 
 .feedback {
