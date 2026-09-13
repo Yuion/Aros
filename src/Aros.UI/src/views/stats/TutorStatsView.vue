@@ -132,6 +132,12 @@
                     <li v-for="(item, i) in entry.exercise.items" :key="i" lang="zh">{{ item }}</li>
                   </ol>
                 </div>
+                <!-- The tutor writes markdown, so the record has to read as the lesson did -->
+                <div
+                  v-else-if="entry.message.role === 'assistant'"
+                  class="said md"
+                  v-html="render(entry.message.content)"
+                />
                 <div v-else class="said" :lang="hasHan(entry.message.content) ? 'zh' : undefined">
                   {{ entry.message.content }}
                 </div>
@@ -166,6 +172,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { api } from '@/services/api'
+import { render } from '@/services/markdown'
 import StatTile from '@/components/stats/StatTile.vue'
 
 const data = ref(null)
@@ -449,6 +456,36 @@ onMounted(async () => {
   line-height: 1.5;
   color: #4b5563;
   white-space: pre-wrap;
+}
+
+.said.md :deep(p) {
+  margin-bottom: 0.4rem;
+}
+
+.said.md :deep(ul),
+.said.md :deep(ol) {
+  margin: 0.3rem 0 0.4rem 1.1rem;
+}
+
+.said.md :deep(h1),
+.said.md :deep(h2),
+.said.md :deep(h3) {
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+}
+
+.said.md :deep(table) {
+  border-collapse: collapse;
+  margin: 0.4rem 0;
+  font-size: 0.74rem;
+}
+
+.said.md :deep(td),
+.said.md :deep(th) {
+  border: 1px solid #eceaf5;
+  padding: 0.15rem 0.35rem;
+  text-align: left;
 }
 
 .said.exercise {
