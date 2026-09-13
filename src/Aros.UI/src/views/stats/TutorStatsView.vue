@@ -113,6 +113,31 @@
           <p v-if="lesson.nextRecommendedTopic" class="block next">
             Next suggested: {{ lesson.nextRecommendedTopic }}
           </p>
+
+          <!-- The write-up is the tutor's account of the lesson; this is the lesson -->
+          <div class="block transcript-block">
+            <button class="link-btn" :disabled="loadingTranscript === lesson.number" @click="toggle(lesson)">
+              {{ transcriptLabel(lesson) }}
+            </button>
+
+            <div v-if="transcripts[lesson.number]?.length" class="transcript">
+              <article v-for="entry in transcripts[lesson.number]" :key="entry.message.id" class="line">
+                <span class="who" :class="entry.message.role">
+                  {{ entry.message.role === 'user' ? 'you' : 'tutor' }}
+                </span>
+                <div v-if="entry.exercise" class="said exercise">
+                  <strong>{{ entry.exercise.key }}</strong>
+                  {{ entry.exercise.instructions }}
+                  <ol>
+                    <li v-for="(item, i) in entry.exercise.items" :key="i" lang="zh">{{ item }}</li>
+                  </ol>
+                </div>
+                <div v-else class="said" :lang="hasHan(entry.message.content) ? 'zh' : undefined">
+                  {{ entry.message.content }}
+                </div>
+              </article>
+            </div>
+          </div>
         </li>
       </ol>
 
@@ -146,6 +171,38 @@ import StatTile from '@/components/stats/StatTile.vue'
 const data = ref(null)
 const loading = ref(true)
 const error = ref('')
+
+// Fetched on demand and kept: a transcript is long, and every lesson's at once would bury the
+// chronicle it is filed under
+const transcripts = ref({})
+const loadingTranscript = ref(0)
+
+function transcriptLabel(lesson) {
+  if (loadingTranscript.value === lesson.number) return 'Reading…'
+  if (transcripts.value[lesson.number]?.length) return 'Hide the transcript'
+  if (transcripts.value[lesson.number]) return 'No transcript kept for this lesson'
+
+  return 'Show the transcript'
+}
+
+async function toggle(lesson) {
+  if (transcripts.value[lesson.number]) {
+    const { [lesson.number]: _, ...rest } = transcripts.value
+    transcripts.value = rest
+    return
+  }
+
+  loadingTranscript.value = lesson.number
+
+  try {
+    const result = await api.get(`/tutor/lessons/${lesson.number}/transcript`)
+    transcripts.value = { ...transcripts.value, [lesson.number]: result.messages }
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    loadingTranscript.value = 0
+  }
+}
 
 const span = computed(() => {
   const t = data.value?.totals
@@ -334,6 +391,77 @@ onMounted(async () => {
 .chips li.unanswered {
   opacity: 0.6;
   border-style: dashed;
+}
+
+.transcript-block {
+  border-top: 1px solid #f3f4f6;
+  padding-top: 0.6rem;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 0.74rem;
+  color: #6d5bd0;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.link-btn:disabled {
+  color: #9ca3af;
+  cursor: default;
+}
+
+.transcript {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 26rem;
+  overflow-y: auto;
+  padding-right: 0.3rem;
+}
+
+.line {
+  display: grid;
+  grid-template-columns: 3rem 1fr;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.who {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #b8bcc4;
+}
+
+.who.user {
+  color: #6d5bd0;
+}
+
+/* The lesson as it was said: whitespace kept, because a list of four sentences was written as
+   four lines and reading it as one is reading something else */
+.said {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: #4b5563;
+  white-space: pre-wrap;
+}
+
+.said.exercise {
+  background: #faf9ff;
+  border: 1px solid #ece9fb;
+  border-radius: 7px;
+  padding: 0.4rem 0.55rem;
+  white-space: normal;
+}
+
+.said.exercise ol {
+  margin: 0.3rem 0 0 1.1rem;
+  font-size: 0.95rem;
 }
 
 .mistakes {

@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Aros.Api.Data;
 using Aros.Api.Data.Entities;
+using Aros.Api.Tts;
 using Aros.Api.Vocab;
 using Microsoft.EntityFrameworkCore;
 
@@ -16,8 +17,16 @@ public record CourseFile(
     [property: JsonPropertyName("pronunciation_rules")] List<RuleSection>? PronunciationRules,
     [property: JsonPropertyName("weak_points")] List<WeakSection>? WeakPoints,
     [property: JsonPropertyName("resolved_weak_points")] List<JsonElement>? ResolvedWeakPoints,
+    [property: JsonPropertyName("vocabulary")] List<WordSection>? Vocabulary,
+    [property: JsonPropertyName("sentences")] List<WordSection>? Sentences,
     [property: JsonPropertyName("lesson_history")] List<LessonSection>? LessonHistory,
     [property: JsonPropertyName("preferences")] JsonElement? Preferences);
+
+/// <summary>A word or a sentence as the write-up gives it — the same three columns either way.</summary>
+public record WordSection(
+    [property: JsonPropertyName("chinese")] string? Chinese,
+    [property: JsonPropertyName("pinyin")] string? Pinyin,
+    [property: JsonPropertyName("english")] string? English);
 
 public record CourseSection(
     [property: JsonPropertyName("level")] string? Level,
@@ -60,7 +69,7 @@ public record LessonSection(
 
 public record CourseImportResult(
     int Grammar, int Rules, int WeakPoints, int Resolved, int Lessons, bool CourseUpdated,
-    IReadOnlyList<string> Notes);
+    int Words, int Sentences, int Drills, IReadOnlyList<string> Notes);
 
 /// <summary>
 /// One-time import of the course as it stood in the previous chat tutor.
@@ -74,9 +83,21 @@ public record CourseImportResult(
 /// What it does import is everything with no home yet: grammar, pronunciation rules, weak points,
 /// lesson history and where the course had got to.
 /// </summary>
-public class CourseImporter(AppDbContext db)
+public class CourseImporter(
+    AppDbContext db,
+    VocabImporter vocabulary,
+    TtsService tts,
+    Grammar.GrammarLibrary grammarLibrary,
+    ILogger<CourseImporter> logger)
 {
-    public async Task<CourseImportResult> ImportAsync(string json, CancellationToken ct)
+    public async Task<CourseImportResult> ImportAsync(string json, CancellationToken ct) =>
+        await ImportAsync(json, null, ct);
+
+    /// <param name="runtimeId">
+    /// The lesson being recorded, when this import is a lesson write-up rather than a pasted file.
+    /// It binds the write-up to the messages that produced it.
+    /// </param>
+    public async Task<CourseImportResult> ImportAsync(string json, string? runtimeId, CancellationToken ct)
     {
         CourseFile? file;
 
@@ -100,16 +121,75 @@ public class CourseImporter(AppDbContext db)
         var rules = await ImportRulesAsync(file.PronunciationRules, ct);
         var weak = await ImportWeakPointsAsync(file.WeakPoints, ct);
         var resolved = await ResolveWeakPointsAsync(file.ResolvedWeakPoints, ct);
-        var lessons = await ImportLessonsAsync(file.LessonHistory, notes, ct);
+        var lessons = await ImportLessonsAsync(file.LessonHistory, runtimeId, notes, ct);
         var course = await ImportCourseAsync(file, ct);
 
         await db.SaveChangesAsync(ct);
 
-        notes.Add("Vocabulary and sentences were not touched — paste those through their own boxes, " +
-                  "which match on what is already held.");
+        // Saving a lesson does the whole of it: the words go to the trainer's review queue, the
+        // sentences are synthesized, and the drills the grammar trainer can now build are built.
+        // Three buttons pressed in the right order was three chances to forget one.
+        var words = await ImportWordsAsync(file.Vocabulary, notes, ct);
+        var sentences = await ImportSentencesAsync(file.Sentences, notes, ct);
+        var drills = (await grammarLibrary.RebuildAsync(ct)).Added;
 
-        return new CourseImportResult(grammar, rules, weak, resolved, lessons, course, notes);
+        return new CourseImportResult(
+            grammar, rules, weak, resolved, lessons, course, words, sentences, drills, notes);
     }
+
+    /// <summary>
+    /// The lesson's new words, through the same importer a pasted table uses and with the same
+    /// rule: anything a model produced waits in review. A plausible wrong tone is exactly what it
+    /// gets wrong, and a word drilled wrong is learned wrong.
+    /// </summary>
+    private async Task<int> ImportWordsAsync(List<WordSection>? items, List<string> notes, CancellationToken ct)
+    {
+        var rows = Rows(items);
+        if (rows.Count == 0) return 0;
+
+        var table = string.Join("\n", rows.Select(r => $"| {r.Chinese} | {r.Pinyin} | {r.English} |"));
+        var result = await vocabulary.ImportAsync(table, ct, needsReview: true);
+
+        if (result.Conflicts.Count > 0)
+            notes.Add($"{result.Conflicts.Count} word(s) are held under a different reading and were left alone.");
+
+        return result.Added + result.Updated;
+    }
+
+    /// <summary>
+    /// The lesson's listening sentences. Each new one is a paid synthesis, so they are done one at
+    /// a time and a failure is reported rather than losing the rest of the import.
+    /// </summary>
+    private async Task<int> ImportSentencesAsync(List<WordSection>? items, List<string> notes, CancellationToken ct)
+    {
+        var rows = Rows(items);
+        if (rows.Count == 0) return 0;
+
+        var added = 0;
+
+        foreach (var row in rows)
+        {
+            try
+            {
+                var (_, cached) = await tts.GetOrCreateAsync(row.Chinese, row.Pinyin, row.English, ct);
+                if (!cached) added++;
+            }
+            catch (Exception ex) when (ex is TtsException or HttpRequestException)
+            {
+                logger.LogWarning(ex, "Sentence {Sentence} could not be synthesized", row.Chinese);
+                notes.Add($"{row.Chinese} could not be synthesized: {ex.Message}");
+            }
+        }
+
+        return added;
+    }
+
+    private static List<(string Chinese, string Pinyin, string English)> Rows(List<WordSection>? items) =>
+    [
+        .. (items ?? [])
+            .Select(i => (Chinese: (i.Chinese ?? "").Trim(), Pinyin: (i.Pinyin ?? "").Trim(), English: (i.English ?? "").Trim()))
+            .Where(i => i.Chinese.Length > 0)
+    ];
 
     private async Task<int> ImportGrammarAsync(List<GrammarSection>? items, List<string> notes, CancellationToken ct)
     {
@@ -232,7 +312,8 @@ public class CourseImporter(AppDbContext db)
         return resolved;
     }
 
-    private async Task<int> ImportLessonsAsync(List<LessonSection>? items, List<string> notes, CancellationToken ct)
+    private async Task<int> ImportLessonsAsync(
+        List<LessonSection>? items, string? runtimeId, List<string> notes, CancellationToken ct)
     {
         if (items is null) return 0;
 
@@ -252,6 +333,7 @@ public class CourseImporter(AppDbContext db)
             lesson.DurationMinutes = item.DurationMinutes;
             lesson.Summary = item.Summary ?? "";
             lesson.Plan = item.Plan ?? lesson.Plan;
+            if (runtimeId is { Length: > 0 }) lesson.RuntimeId = runtimeId;
             lesson.NextRecommendedTopic = item.NextRecommendedTopic ?? "";
             lesson.NewVocabulary = Lines(item.NewVocabulary) ?? [];
             lesson.NewGrammar = Lines(item.NewGrammar) ?? [];

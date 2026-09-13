@@ -40,7 +40,12 @@ public class TurnRunner(
         // answer to it, and that is a fact rather than something to be inferred from the text.
         await runtimeService.MarkAnsweringAsync(runtime, ct);
 
-        var question = new ChatMessage { Role = ChatRole.User, Content = message };
+        var question = new ChatMessage
+        {
+            Role = ChatRole.User,
+            Content = message,
+            LessonId = runtime.LessonId,
+        };
         db.ChatMessages.Add(question);
         await db.SaveChangesAsync(ct);
 
@@ -57,6 +62,7 @@ public class TurnRunner(
             {
                 Role = ChatRole.Assistant,
                 Content = turn["message"]?.GetValue<string>() ?? "",
+                LessonId = runtime.LessonId,
                 ResponseRef = reply.ResponseId,
                 Model = reply.Model,
                 InputTokens = reply.Usage.InputTokens,
@@ -76,6 +82,7 @@ public class TurnRunner(
                     Content = "",
                     ExerciseKey = set.Key,
                     Model = reply.Model,
+                    LessonId = runtime.LessonId,
                 });
             }
 

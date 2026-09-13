@@ -49,6 +49,14 @@ public class ChatMessage
     public int LatencyMs { get; set; }
 
     /// <summary>
+    /// <summary>
+    /// The lesson this message belongs to, as the runtime numbers them. Kept on the message rather
+    /// than worked out from timestamps afterwards: a lesson's transcript is the one record of what
+    /// was actually said, and inferring it from clock times would go wrong the first time two
+    /// lessons ran in an evening — which they already have.
+    /// </summary>
+    public string? LessonId { get; set; }
+
     /// Set when this message is the exercise itself. It keeps its place in the thread, so an
     /// exercise stays readable after the next one has been set — a card beside the chat could only
     /// ever show the latest.
@@ -123,6 +131,9 @@ public class Lesson
 
     /// <summary>What the lesson set out to do, as stated at its start.</summary>
     public string Plan { get; set; } = "";
+
+    /// <summary>Which runtime lesson this write-up came from, so its transcript can be found.</summary>
+    public string RuntimeId { get; set; } = "";
     public string NextRecommendedTopic { get; set; } = "";
 
     // Recorded as written rather than as foreign keys: a lesson is a historical note, and it should

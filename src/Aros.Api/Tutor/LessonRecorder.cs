@@ -38,8 +38,12 @@ public class LessonRecorder(
           One slip of attention is not a weakness. Empty is normal.
         - resolved_weak_points names existing weaknesses answered correctly and without hesitation
           today. Leave it empty if unsure.
-        - new_vocabulary lists characters only. The words themselves are imported separately from
-          your vocabulary table, with their pinyin and meanings.
+        - vocabulary is every word introduced today, with pinyin and meaning. It goes straight
+          into the learner's trainer, held for review first.
+        - sentences are the listening sentences for today's material: natural, using only what the
+          learner now knows. Each one is synthesized and costs a call, so ten is generous and
+          thirty is not. Give the spoken pinyin, after sandhi.
+        - new_vocabulary lists the same words as characters only, for the lesson record.
         - This lesson is number LESSON_NUMBER and today is TODAY.
         """;
 

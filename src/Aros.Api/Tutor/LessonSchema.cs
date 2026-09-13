@@ -26,6 +26,20 @@ public static class LessonSchema
                 ["next_recommended_topic"] = Text("What the next lesson should do, one line."),
             }),
 
+            ["vocabulary"] = Array(Object(new JsonObject
+            {
+                ["chinese"] = Text("The word, characters only."),
+                ["pinyin"] = Text("Tone numbers, spaces between syllables: ni3 hao3."),
+                ["english"] = Text("The meaning."),
+            })),
+
+            ["sentences"] = Array(Object(new JsonObject
+            {
+                ["chinese"] = Text("The sentence, with its punctuation."),
+                ["pinyin"] = Text("The spoken form after sandhi: bu2 shi4, not bu4 shi4."),
+                ["english"] = Text("The translation."),
+            })),
+
             ["grammar"] = Array(Object(new JsonObject
             {
                 ["id"] = Text("Short snake_case identifier, stable across lessons."),

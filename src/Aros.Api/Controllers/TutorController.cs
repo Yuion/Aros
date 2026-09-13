@@ -146,7 +146,9 @@ public class TutorController(
 
         try
         {
-            var result = await courseImporter.ImportAsync(proposal.Payload, ct);
+            // The runtime still knows which lesson this was; after the reset below, nothing does
+            var runtime = await runtimeService.CurrentAsync(ct);
+            var result = await courseImporter.ImportAsync(proposal.Payload, runtime.LessonId, ct);
 
             proposal.Status = ProposalStatus.Applied;
             proposal.DecidedAt = DateTime.UtcNow;
@@ -196,6 +198,40 @@ public class TutorController(
     /// yours to edit, and the state, which is read from the database and cannot be typed over.
     /// The first thing to go wrong is usually in here.
     /// </summary>
+    /// <summary>
+    /// One lesson's transcript, exactly as it happened. Hidden messages are included: clearing the
+    /// thread is about the screen, not about the record, and a lesson you cleared afterwards is
+    /// still a lesson you had.
+    /// </summary>
+    [HttpGet("lessons/{number:int}/transcript")]
+    public async Task<IActionResult> Transcript(int number, CancellationToken ct)
+    {
+        var lesson = await db.Lessons.AsNoTracking().FirstOrDefaultAsync(l => l.Number == number, ct);
+        if (lesson is null) return NotFound();
+
+        var messages = lesson.RuntimeId.Length == 0
+            ? []
+            : await db.ChatMessages
+                .AsNoTracking()
+                .Where(m => m.LessonId == lesson.RuntimeId)
+                .OrderBy(m => m.CreatedAt)
+                .ThenBy(m => m.Id)
+                .ToListAsync(ct);
+
+        var keys = messages.Where(m => m.ExerciseKey is not null).Select(m => m.ExerciseKey!).ToList();
+        var exercises = await db.Exercises.AsNoTracking()
+            .Where(e => keys.Contains(e.Key))
+            .ToDictionaryAsync(e => e.Key, ct);
+
+        return Ok(new
+        {
+            number,
+            date = lesson.Date,
+            runtimeId = lesson.RuntimeId,
+            messages = messages.Select(m => Describe(m, exercises)),
+        });
+    }
+
     [HttpGet("context")]
     public async Task<IActionResult> Context(CancellationToken ct)
     {
