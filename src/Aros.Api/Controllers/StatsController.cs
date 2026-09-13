@@ -160,9 +160,10 @@ public class StatsController(
             practiced = words.Count(w => w.Progress.Count > 0),
             neverPracticed = words.Count(w => w.Progress.Count == 0 && !w.NeedsReview),
             needsReview = words.Count(w => w.NeedsReview),
-            mastered = rows.Count(r => VocabService.Ladder(r.Progress).IsMastered(r.Progress.ConsecutiveCorrect)),
-            resting = rows.Count(r => VocabService.Ladder(r.Progress)
-                .IsResting(r.Progress.ConsecutiveCorrect, r.Progress.LastSeenAt)),
+            mastered = rows.Count(r => Rung(r.Word, r.Progress) is var (streak, ladder) && ladder.IsMastered(streak)),
+            resting = rows.Count(r => Rung(r.Word, r.Progress) is var (streak, ladder)
+                                      && !ladder.IsMastered(streak)
+                                      && ladder.IsResting(streak, r.Progress.LastSeenAt)),
             lastPlayed = rows.Count == 0 ? null : rows.Max(r => r.Progress.LastSeenAt),
         };
 
@@ -205,8 +206,9 @@ public class StatsController(
             })
             .ToList();
 
+        // The study list, so a word you have retired is off it
         var needsWork = rows
-            .Where(r => r.Progress.WrongCount > 0)
+            .Where(r => r.Progress.WrongCount > 0 && r.Word.RetiredAt is null)
             .Select(r => new
             {
                 characters = r.Word.Characters,
@@ -223,7 +225,7 @@ public class StatsController(
             .ToList();
 
         var untouched = words
-            .Where(w => w.Progress.Count == 0 && !w.NeedsReview)
+            .Where(w => w.Progress.Count == 0 && !w.NeedsReview && w.RetiredAt is null)
             .OrderBy(w => w.Characters)
             .Select(w => w.Characters)
             .Take(30)
@@ -234,8 +236,7 @@ public class StatsController(
             .Select(a => (DateTime?)a.AnsweredAt)
             .FirstOrDefaultAsync(ct);
 
-        var mastery = MasteryBands(
-            rows.Select(r => (r.Progress.ConsecutiveCorrect, VocabService.Ladder(r.Progress))));
+        var mastery = MasteryBands(rows.Select(r => Rung(r.Word, r.Progress)));
         var standing = Standing(await vocab.AvailabilityAsync(null, ct));
 
         return Ok(new { totals, daily, byDirection, standing, needsWork, mastery, untouched, historyStart, trendDays = TrendDays });
@@ -429,6 +430,16 @@ public class StatsController(
         || name.Contains(title, StringComparison.OrdinalIgnoreCase);
 
     private static RestSchedule Ladder(TtsClipStat stat) => RestSchedule.ForListening(stat.WrongCount);
+
+    /// <summary>Same for a word: retired by hand reads as finished, whatever the streak says.</summary>
+    private static (int Streak, RestSchedule Schedule) Rung(VocabWord word, VocabProgress progress)
+    {
+        var ladder = VocabService.Ladder(progress);
+
+        return word.RetiredAt is null
+            ? (progress.ConsecutiveCorrect, ladder)
+            : (ladder.MasteryStreak, ladder);
+    }
 
     /// <summary>
     /// Where one sentence stands in one mode. A sentence retired by hand reads as finished however

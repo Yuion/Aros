@@ -149,9 +149,18 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
         return tag is { Length: > 0 } ? words.Where(w => w.Tags.Contains(tag)).ToList() : words;
     }
 
-    public static Availability.Standing Standing(VocabWord word, VocabDirection direction) =>
-        new(Ladder(Progress(word, direction)),
-            Progress(word, direction) is { } p ? (p.ConsecutiveCorrect, p.LastSeenAt) : null);
+    public static Availability.Standing Standing(VocabWord word, VocabDirection direction)
+    {
+        var ladder = Ladder(Progress(word, direction));
+
+        // Retired by hand reads as mastered everywhere, so the bars, the start button and the
+        // trainer never disagree about what is left to ask
+        if (word.RetiredAt is not null)
+            return new Availability.Standing(ladder, (ladder.MasteryStreak, null));
+
+        return new Availability.Standing(
+            ladder, Progress(word, direction) is { } p ? (p.ConsecutiveCorrect, p.LastSeenAt) : null);
+    }
 
     /// <summary>A word that has been missed in this direction climbs the longer ladder.</summary>
     internal static RestSchedule Ladder(VocabProgress? progress) =>
@@ -397,8 +406,9 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
     /// and says so, so there is no reason to cut a rest short behind your back.
     /// </summary>
     private static List<VocabWord> Askable(List<VocabWord> words, VocabDirection direction) =>
-        words.Where(w => Progress(w, direction) is not { } p
-                         || Ladder(p).IsAvailable(p.ConsecutiveCorrect, p.LastSeenAt))
+        words.Where(w => w.RetiredAt is null
+                         && (Progress(w, direction) is not { } p
+                             || Ladder(p).IsAvailable(p.ConsecutiveCorrect, p.LastSeenAt)))
              .ToList();
 
     internal static VocabProgress? Progress(VocabWord word, VocabDirection direction) =>

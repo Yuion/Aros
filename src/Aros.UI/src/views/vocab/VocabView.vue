@@ -158,7 +158,10 @@
 
       <!-- The pool -->
       <section v-if="ready.length" class="card">
-        <h2>Words <span class="count">{{ ready.length }}</span></h2>
+        <h2>
+          Words <span class="count">{{ shown.length }}</span>
+          <span v-if="shown.length !== ready.length" class="of">of {{ ready.length }}</span>
+        </h2>
         <p class="card-note">
           ▶ speaks the word. The first time costs one synthesis, then it is cached for good —
           {{ spoken }} of {{ ready.length }} have audio.
@@ -171,24 +174,59 @@
             {{ speakingAll ? 'Speaking…' : `Speak the missing ${silent}` }}
           </button>
         </p>
-        <ul class="word-list">
-          <li v-for="word in ready" :key="word.id">
-            <button
-              class="speak"
-              :class="{ silent: !word.hasAudio }"
-              :disabled="speaking === word.id"
-              :title="word.hasAudio ? 'Play' : 'Speak it — costs one synthesis'"
-              @click="speak(word)"
-            >
-              {{ speaking === word.id ? '…' : '▶' }}
-            </button>
-            <span class="chars" lang="zh">{{ word.characters }}</span>
-            <span class="pinyin">{{ word.pinyin }}</span>
-            <span class="english">{{ word.english }}</span>
-            <span v-if="word.correct || word.wrong" class="score">
-              {{ word.correct }}✓ {{ word.wrong }}✗
-            </span>
-            <button class="remove" title="Delete this word" @click="remove(word)">✕</button>
+        <LibraryTools
+          v-model:search="search"
+          v-model:filter="filter"
+          v-model:sort="sort"
+          v-model:descending="descending"
+          :filters="FILTERS"
+          placeholder="Find a word, reading or meaning"
+        />
+
+        <p v-if="!shown.length" class="placeholder">{{ nothingShown }}</p>
+
+        <ul v-else class="word-list">
+          <li v-for="word in shown" :key="word.id" :class="{ retired: word.retiredAt }">
+            <!-- The row opens on click: the per-direction record and the retire button live
+                 underneath, so the list stays one line per word until you ask for more -->
+            <div class="word-head" @click="expand(word.id)">
+              <button
+                class="speak"
+                :class="{ silent: !word.hasAudio }"
+                :disabled="speaking === word.id"
+                :title="word.hasAudio ? 'Play' : 'Speak it — costs one synthesis'"
+                @click.stop="speak(word)"
+              >
+                {{ speaking === word.id ? '…' : '▶' }}
+              </button>
+              <span class="chars" lang="zh">{{ word.characters }}</span>
+              <span class="pinyin">{{ word.pinyin }}</span>
+              <span class="english">{{ word.english }}</span>
+              <span v-if="word.retiredAt" class="tag">retired</span>
+              <span v-else-if="word.correct || word.wrong" class="score">
+                {{ word.correct }}✓ {{ word.wrong }}✗
+              </span>
+              <span class="caret">{{ opened === word.id ? '▾' : '▸' }}</span>
+            </div>
+
+            <div v-if="opened === word.id" class="word-body">
+              <!-- Apart, not added up: recognising 水 and producing it are different skills -->
+              <ul class="directions">
+                <li v-for="d in word.directions" :key="d.key" class="direction">
+                  <span class="dir-name">{{ DIRECTION_LABELS[d.key] ?? d.key }}</span>
+                  <span class="dir-score">{{ d.correct }}✓ / {{ d.wrong }}✗</span>
+                  <span class="dir-state" :class="d.state">{{ stateLabel(d) }}</span>
+                </li>
+              </ul>
+
+              <div class="word-actions">
+                <button class="link-btn" :disabled="retiring === word.id" @click="retire(word)">
+                  {{ word.retiredAt ? 'Put back in rotation' : 'Retire as mastered' }}
+                </button>
+                <button class="remove" title="Delete this word" @click="remove(word)">✕ Delete</button>
+                <span class="added">added {{ day(word.createdAt) }}</span>
+              </div>
+            </div>
           </li>
         </ul>
       </section>
@@ -200,6 +238,11 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { api } from '@/services/api'
+import { GAP_FILTERS, FILTERS as BASE_FILTERS, arrange } from '@/services/library'
+import LibraryTools from '@/components/LibraryTools.vue'
+
+// Words carry their own gap: one with no audio has never been spoken
+const FILTERS = [...BASE_FILTERS.slice(0, -1), GAP_FILTERS.vocab, BASE_FILTERS.at(-1)]
 
 const DIRECTIONS = [
   { value: 'CharactersToPinyin', label: 'Characters → Pinyin' },
@@ -219,6 +262,65 @@ const edits = reactive({})
 
 const ready = computed(() => words.value.filter((w) => !w.needsReview))
 const review = computed(() => words.value.filter((w) => w.needsReview))
+
+const DIRECTION_LABELS = Object.fromEntries(DIRECTIONS.map((d) => [d.value, d.label]))
+
+const search = ref('')
+// Words you have finished with are hidden to begin with: the list is for what is still being
+// asked, and everything else is one dropdown away
+const filter = ref('rotation')
+const sort = ref('added')
+const descending = ref(true)
+const opened = ref(null)
+const retiring = ref(null)
+
+const shown = computed(() =>
+  arrange(ready.value, {
+    search: search.value,
+    filter: filter.value,
+    sort: sort.value,
+    descending: descending.value,
+  })
+)
+
+const nothingShown = computed(() =>
+  search.value.trim()
+    ? `Nothing matches “${search.value.trim()}”.`
+    : 'Nothing here — try a different filter.'
+)
+
+function expand(id) {
+  opened.value = opened.value === id ? null : id
+}
+
+function stateLabel(part) {
+  if (part.state === 'retired') return 'retired'
+  if (part.state === 'mastered') return 'mastered'
+  if (part.state === 'resting') return 'resting · back ' + part.due
+
+  return part.streak > 0 ? 'ready · ' + part.streak + ' in a row' : 'ready'
+}
+
+// Stored in UTC, read in your evening: slicing the ISO string would call last night's import
+// yesterday's for half the day
+function day(value) {
+  return value ? new Date(value).toLocaleDateString() : ''
+}
+
+/** Out of the trainer without being deleted, and back again — the streaks are never touched. */
+async function retire(word) {
+  retiring.value = word.id
+  error.value = ''
+
+  try {
+    Object.assign(word, await api.put(`/vocab/words/${word.id}/retired`, { retired: !word.retiredAt }))
+    availability.value = await api.get('/vocab/availability')
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    retiring.value = null
+  }
+}
 
 const player = ref(null)
 const speaking = ref(0)
@@ -798,13 +900,100 @@ h1 {
 }
 
 .word-list li {
+  border: 1px solid #f0efec;
+  border-radius: 7px;
+}
+
+.word-list li.retired {
+  background: #fafafa;
+  border-style: dashed;
+}
+
+.word-head {
   display: grid;
   grid-template-columns: auto auto 7rem 1fr auto auto;
   align-items: center;
   gap: 0.6rem;
   padding: 0.45rem 0.55rem;
-  border: 1px solid #f0efec;
-  border-radius: 7px;
+  cursor: pointer;
+}
+
+.word-list li.retired .chars {
+  color: #6b7280;
+}
+
+.of {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #9ca3af;
+}
+
+.tag {
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: #15803d;
+  background: #f0fdf4;
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  white-space: nowrap;
+}
+
+.caret {
+  font-size: 0.7rem;
+  color: #9ca3af;
+}
+
+.word-body {
+  padding: 0.55rem 0.6rem 0.6rem 2.3rem;
+  border-top: 1px solid #f3f4f6;
+}
+
+.directions {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.direction {
+  display: grid;
+  grid-template-columns: 11rem 5rem 1fr;
+  gap: 0.5rem;
+  align-items: baseline;
+  font-size: 0.76rem;
+  color: #6b7280;
+}
+
+.dir-name {
+  color: #4b5563;
+  font-weight: 600;
+}
+
+.dir-state.ready {
+  color: #6d5bd0;
+}
+
+.dir-state.mastered,
+.dir-state.retired {
+  color: #15803d;
+}
+
+.dir-state.resting {
+  color: #92400e;
+}
+
+.word-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.added {
+  margin-left: auto;
+  font-size: 0.7rem;
+  color: #9ca3af;
 }
 
 .word-list .chars {
@@ -849,7 +1038,15 @@ h1 {
 
 
 @media (max-width: 560px) {
-  .word-list li {
+  .direction {
+    grid-template-columns: 1fr auto;
+  }
+
+  .dir-state {
+    grid-column: 1 / -1;
+  }
+
+  .word-head {
     grid-template-columns: auto auto 1fr auto;
   }
 

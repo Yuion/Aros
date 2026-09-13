@@ -111,28 +111,18 @@
         <span v-if="shown.length !== clips.length" class="of">of {{ clips.length }}</span>
       </h2>
 
-      <div v-if="clips.length" class="tools">
-        <input
-          v-model="search"
-          class="search"
-          type="search"
-          placeholder="Find a sentence, reading or meaning"
-        />
-
-        <div class="sort">
-          <select v-model="sort" class="sort-by" aria-label="Sort by">
-            <option value="added">Added</option>
-            <option value="alphabetical">Pinyin A–Z</option>
-            <option value="practice">Times practised</option>
-          </select>
-          <button class="sort-dir" :title="directionLabel" @click="descending = !descending">
-            {{ descending ? '↓' : '↑' }} <span class="dir-label">{{ directionLabel }}</span>
-          </button>
-        </div>
-      </div>
+      <LibraryTools
+        v-if="clips.length"
+        v-model:search="search"
+        v-model:filter="filter"
+        v-model:sort="sort"
+        v-model:descending="descending"
+        :filters="FILTERS"
+        placeholder="Find a sentence, reading or meaning"
+      />
 
       <p v-if="!clips.length" class="empty">Nothing yet. Speak a sentence to start your library.</p>
-      <p v-else-if="!shown.length" class="empty">Nothing matches “{{ search }}”.</p>
+      <p v-else-if="!shown.length" class="empty">{{ nothingShown }}</p>
 
       <ul v-else class="clip-list">
         <li v-for="clip in shown" :key="clip.id" class="clip" :class="{ retired: clip.retiredAt }">
@@ -142,8 +132,8 @@
             <button class="icon-btn" title="Play" @click.stop="play(clip.audioUrl)">▶</button>
             <span class="clip-sentence" lang="zh">{{ clip.sentence }}</span>
             <span v-if="clip.retiredAt" class="tag">retired</span>
-            <span v-else-if="clip.correctCount || clip.wrongCount" class="score">
-              {{ clip.correctCount }}✓ / {{ clip.wrongCount }}✗
+            <span v-else-if="clip.correct || clip.wrong" class="score">
+              {{ clip.correct }}✓ / {{ clip.wrong }}✗
             </span>
             <span v-else class="score faint">unpractised</span>
             <span class="caret">{{ opened === clip.id ? '▾' : '▸' }}</span>
@@ -160,8 +150,8 @@
             <!-- Apart, not added up: a sentence can be solid when you pick it out of four and
                  hopeless when you have to write the English -->
             <ul class="modes">
-              <li v-for="m in clip.modes" :key="m.mode" class="mode">
-                <span class="mode-name">{{ MODE_LABELS[m.mode] ?? m.mode }}</span>
+              <li v-for="m in clip.modes" :key="m.key" class="mode">
+                <span class="mode-name">{{ MODE_LABELS[m.key] ?? m.key }}</span>
                 <span class="mode-score">{{ m.correct }}✓ / {{ m.wrong }}✗</span>
                 <span class="mode-state" :class="m.state">{{ stateLabel(m) }}</span>
               </li>
@@ -187,19 +177,16 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { api } from '@/services/api'
 import { clip as clipAudio, release } from '@/services/audio'
+import { GAP_FILTERS, FILTERS as BASE_FILTERS, arrange } from '@/services/library'
+import LibraryTools from '@/components/LibraryTools.vue'
+
+// Sentences carry their own gap: a mode cannot ask what the sentence has no reading for
+const FILTERS = [...BASE_FILTERS.slice(0, -1), GAP_FILTERS.clips, BASE_FILTERS.at(-1)]
 
 const MODE_LABELS = {
   Characters: 'Pick the sentence',
   Pinyin: 'Write the pinyin',
   English: 'Write the English',
-}
-
-// Ascending first, descending second — the button says which it is rather than leaving an arrow
-// to be interpreted
-const SORT_LABELS = {
-  added: ['oldest first', 'newest first'],
-  alphabetical: ['A to Z', 'Z to A'],
-  practice: ['least practised', 'most practised'],
 }
 
 const STORAGE_KEY = 'aros.tts.sections'
@@ -239,37 +226,28 @@ const loading = ref(false)
 const player = ref(null)
 
 const search = ref('')
+// Sentences you have finished with are hidden to begin with: the list is for what is still being
+// asked, and everything else is one dropdown away
+const filter = ref('rotation')
 const sort = ref('added')
 const descending = ref(true)
 const opened = ref(null)
 const retiring = ref(null)
 
-const directionLabel = computed(() => SORT_LABELS[sort.value][descending.value ? 1 : 0])
+const shown = computed(() =>
+  arrange(clips.value, {
+    search: search.value,
+    filter: filter.value,
+    sort: sort.value,
+    descending: descending.value,
+  })
+)
 
-/**
- * The list as shown. Chinese has no useful alphabetical order of its own, so "A–Z" sorts on the
- * pinyin and a sentence that has none sorts on its characters rather than collecting at one end.
- */
-const shown = computed(() => {
-  const needle = search.value.trim().toLowerCase()
-
-  const matching = needle
-    ? clips.value.filter((c) =>
-        [c.sentence, c.pinyin, c.english].some((field) => (field ?? '').toLowerCase().includes(needle))
-      )
-    : [...clips.value]
-
-  const by = {
-    added: (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
-    alphabetical: (a, b) => (a.pinyin || a.sentence).localeCompare(b.pinyin || b.sentence),
-    practice: (a, b) => a.correctCount + a.wrongCount - (b.correctCount + b.wrongCount),
-  }[sort.value]
-
-  matching.sort(by)
-  if (descending.value) matching.reverse()
-
-  return matching
-})
+const nothingShown = computed(() =>
+  search.value.trim()
+    ? `Nothing matches “${search.value.trim()}”.`
+    : 'Nothing here — try a different filter.'
+)
 
 function expand(id) {
   opened.value = opened.value === id ? null : id
@@ -619,57 +597,6 @@ textarea:focus {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-}
-
-.tools {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 0.6rem;
-  flex-wrap: wrap;
-}
-
-.search {
-  flex: 1;
-  min-width: 12rem;
-  font: inherit;
-  font-size: 0.85rem;
-  padding: 0.4rem 0.6rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 7px;
-  background: white;
-}
-
-.sort {
-  display: flex;
-  gap: 0.35rem;
-}
-
-.sort-by {
-  font: inherit;
-  font-size: 0.8rem;
-  padding: 0.4rem 0.5rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 7px;
-  background: white;
-  cursor: pointer;
-}
-
-/* The arrow alone never says what "up" means for a date, so the words come with it */
-.sort-dir {
-  font: inherit;
-  font-size: 0.8rem;
-  padding: 0.4rem 0.6rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 7px;
-  background: white;
-  color: #4b5563;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.sort-dir:hover {
-  border-color: #6d5bd0;
-  color: #6d5bd0;
 }
 
 .of {

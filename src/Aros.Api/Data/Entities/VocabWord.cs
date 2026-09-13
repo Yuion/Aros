@@ -41,6 +41,15 @@ public class VocabWord
     /// </summary>
     public bool Active { get; set; } = true;
 
+    /// <summary>
+    /// Retired by hand: a word you know, taken out of the trainer without deleting it. It counts
+    /// as mastered in every direction however its streaks stand, stays in the tutor's known
+    /// vocabulary — a word you have finished with is still a word you know — and goes straight
+    /// back into rotation when this is cleared. <see cref="Active"/> is the other thing: a word
+    /// withdrawn from the course entirely.
+    /// </summary>
+    public DateTime? RetiredAt { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<VocabProgress> Progress { get; set; } = [];

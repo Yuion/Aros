@@ -1,5 +1,6 @@
 using Aros.Api.Data;
 using Aros.Api.Data.Entities;
+using Aros.Api.Scheduling;
 using Aros.Api.Tts;
 using Aros.Api.Vocab;
 using Microsoft.AspNetCore.Mvc;
@@ -11,6 +12,7 @@ public record VocabAnswerRequest(Guid Token, string? Text, int? SelectedWordId);
 /// <summary>A pasted table of words. The field is the whole paste, not one word.</summary>
 public record VocabDumpRequest(string? Text);
 public record VocabEditRequest(string? Pinyin, string? English, string[]? Tags, string? Notes);
+public record RetireWordRequest(bool Retired);
 
 [ApiController]
 [Route("api/[controller]")]
@@ -22,26 +24,71 @@ public class VocabController(AppDbContext db, VocabService vocab, VocabImporter 
         var query = db.VocabWords.Include(w => w.Progress).AsNoTracking();
         if (needsReview is { } flag) query = query.Where(w => w.NeedsReview == flag);
 
-        var words = await query
-            .OrderBy(w => w.Characters)
-            .Select(w => new
-            {
-                id = w.Id,
-                characters = w.Characters,
-                pinyin = w.Pinyin,
-                english = w.English,
-                tags = w.Tags,
-                notes = w.Notes,
-                needsReview = w.NeedsReview,
-                readingAlternatives = w.ReadingAlternatives,
-                hasAudio = w.AudioLocation != "",
-                audioUrl = $"/api/vocab/words/{w.Id}/audio",
-                correct = w.Progress.Sum(p => p.CorrectCount),
-                wrong = w.Progress.Sum(p => p.WrongCount),
-            })
-            .ToListAsync(ct);
+        var words = await query.OrderBy(w => w.Characters).ToListAsync(ct);
 
-        return Ok(words);
+        return Ok(words.Select(Describe));
+    }
+
+    /// <summary>
+    /// Retire a word you know, or put it back. Nothing is deleted: the audio, the readings and
+    /// every streak stay, and the trainer simply stops asking.
+    /// </summary>
+    [HttpPut("words/{id:int}/retired")]
+    public async Task<IActionResult> Retire(int id, [FromBody] RetireWordRequest request, CancellationToken ct)
+    {
+        var word = await db.VocabWords.Include(w => w.Progress).FirstOrDefaultAsync(w => w.Id == id, ct);
+        if (word is null) return NotFound();
+
+        word.RetiredAt = request.Retired ? DateTime.UtcNow : null;
+        await db.SaveChangesAsync(ct);
+
+        return Ok(Describe(word));
+    }
+
+    /// <summary>
+    /// One word as the list shows it. The directions are reported apart, the way the sentence
+    /// library reports its modes: recognising 水 and producing it are different skills, and one
+    /// merged score hides whichever of them is behind.
+    /// </summary>
+    private static object Describe(VocabWord word)
+    {
+        var directions = Enum.GetValues<VocabDirection>().Select(d => Direction(word, d)).ToList();
+
+        return new
+        {
+            id = word.Id,
+            characters = word.Characters,
+            pinyin = word.Pinyin,
+            english = word.English,
+            tags = word.Tags,
+            notes = word.Notes,
+            needsReview = word.NeedsReview,
+            readingAlternatives = word.ReadingAlternatives,
+            hasAudio = word.AudioLocation != "",
+            audioUrl = $"/api/vocab/words/{word.Id}/audio",
+            createdAt = word.CreatedAt,
+            retiredAt = word.RetiredAt,
+            correct = word.Progress.Sum(p => p.CorrectCount),
+            wrong = word.Progress.Sum(p => p.WrongCount),
+            state = ItemState.Overall(word.RetiredAt, directions.Select(d => d.state)),
+            directions,
+        };
+    }
+
+    private static ItemState.Part Direction(VocabWord word, VocabDirection direction)
+    {
+        var progress = VocabService.Progress(word, direction);
+        var ladder = VocabService.Ladder(progress);
+
+        return ItemState.Describe(
+            direction.ToString(),
+            word.RetiredAt,
+            possible: true,                 // every word can be asked in every direction
+            ladder,
+            progress?.ConsecutiveCorrect ?? 0,
+            progress?.CorrectCount ?? 0,
+            progress?.WrongCount ?? 0,
+            progress?.LastSeenAt);
     }
 
     /// <summary>

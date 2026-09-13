@@ -156,41 +156,29 @@ public class TtsController(AppDbContext db, TtsService tts) : ControllerBase
         durationSeconds = clip.DurationSeconds,
         createdAt = clip.CreatedAt,
         retiredAt = clip.RetiredAt,
-        correctCount = clip.Stats.Sum(s => s.CorrectCount),
-        wrongCount = clip.Stats.Sum(s => s.WrongCount),
-        modes = Enum.GetValues<ListeningMode>().Select(mode => Mode(clip, mode)),
+        correct = clip.Stats.Sum(s => s.CorrectCount),
+        wrong = clip.Stats.Sum(s => s.WrongCount),
+        modes = Modes(clip),
+        state = ItemState.Overall(clip.RetiredAt, Modes(clip).Select(m => m.state)),
         audioUrl = $"/api/tts/clips/{clip.Id}/audio",
     };
 
-    private static object Mode(TtsClip clip, ListeningMode mode)
+    private static List<ItemState.Part> Modes(TtsClip clip) =>
+        [.. Enum.GetValues<ListeningMode>().Select(mode => Mode(clip, mode))];
+
+    private static ItemState.Part Mode(TtsClip clip, ListeningMode mode)
     {
         var stat = ListeningService.Stat(clip, mode);
-        var schedule = RestSchedule.ForListening(stat?.WrongCount ?? 0);
-        var streak = stat?.ConsecutiveCorrect ?? 0;
 
-        // Why it cannot be asked, in the order that decides it: retired by hand, finished on the
-        // ladder, waiting out a rest, or missing the reading the mode needs
-        var restingUntil = stat is null ? null : schedule.RestingUntil(streak, stat.LastSeenAt);
-        var resting = restingUntil is { } until && until > DateTime.UtcNow;
-
-        var state =
-            clip.RetiredAt is not null ? "retired"
-            : !Possible(clip, mode) ? "unavailable"
-            : schedule.IsMastered(streak) ? "mastered"
-            : resting ? "resting"
-            : "ready";
-
-        return new
-        {
-            mode = mode.ToString(),
-            state,
-            correct = stat?.CorrectCount ?? 0,
-            wrong = stat?.WrongCount ?? 0,
-            streak,
-            lastSeenAt = stat?.LastSeenAt,
-            dueAt = resting ? restingUntil : null,
-            due = resting ? Availability.Due(restingUntil!.Value) : null,
-        };
+        return ItemState.Describe(
+            mode.ToString(),
+            clip.RetiredAt,
+            Possible(clip, mode),
+            RestSchedule.ForListening(stat?.WrongCount ?? 0),
+            stat?.ConsecutiveCorrect ?? 0,
+            stat?.CorrectCount ?? 0,
+            stat?.WrongCount ?? 0,
+            stat?.LastSeenAt);
     }
 
     /// <summary>A mode can only ask what the sentence carries: pinyin and English are optional.</summary>
