@@ -220,7 +220,7 @@
               </ul>
 
               <div class="word-actions">
-                <button class="link-btn" :disabled="retiring === word.id" @click="retire(word)">
+                <button class="retire-btn" :disabled="retiring === word.id" @click="retire(word)">
                   {{ word.retiredAt ? 'Put back in rotation' : 'Retire as mastered' }}
                 </button>
                 <button class="remove" title="Delete this word" @click="remove(word)">✕ Delete</button>
@@ -980,6 +980,26 @@ h1 {
 
 .dir-state.resting {
   color: #92400e;
+}
+
+.retire-btn {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid #ddd6fe;
+  border-radius: 7px;
+  background: white;
+  color: #6d5bd0;
+  cursor: pointer;
+}
+
+.retire-btn:hover:not(:disabled) {
+  background: #f3f0ff;
+}
+
+.retire-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .word-actions {
