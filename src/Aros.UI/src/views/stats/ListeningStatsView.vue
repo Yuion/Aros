@@ -116,6 +116,7 @@ const error = ref('')
 
 const MODE_LABELS = {
   Characters: 'pick it',
+  Ordering: 'build it',
   Pinyin: 'write pinyin',
   English: 'write English',
 }

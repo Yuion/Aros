@@ -14,4 +14,10 @@ public enum ListeningMode
 
     /// <summary>Write the English of what you heard. Needs <see cref="TtsClip.English"/>.</summary>
     English = 2,
+
+    /// <summary>
+    /// Rebuild what you heard from character tiles. Needs nothing but the audio, and is the only
+    /// question in either trainer that asks about word order.
+    /// </summary>
+    Ordering = 3,
 }

@@ -17,7 +17,8 @@ public record QuizQuestion(
     ListeningMode Mode,
     bool Typed,
     IReadOnlyList<QuizOption>? Options,
-    IReadOnlyList<QuizHint>? Hints);
+    IReadOnlyList<QuizHint>? Hints,
+    IReadOnlyList<string>? Tiles);
 
 public record Quiz(ListeningMode Mode, IReadOnlyList<QuizQuestion> Questions);
 
@@ -38,7 +39,8 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     private static readonly TimeSpan TokenLifetime = TimeSpan.FromHours(2);
 
     /// <summary>Picking the sentence needs three options; writing what you heard needs a keyboard.</summary>
-    public static bool IsTyped(ListeningMode mode) => mode is not ListeningMode.Characters;
+    public static bool IsTyped(ListeningMode mode) =>
+        mode is not (ListeningMode.Characters or ListeningMode.Ordering);
 
     /// <summary>Answer key for one question, held server-side so the page can't read it out of the payload.</summary>
     private sealed class QuestionState
@@ -221,6 +223,13 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         {
             ListeningMode.Characters => (selectedClipId == clip.Id, null),
 
+            ListeningMode.Ordering =>
+                SentenceTiles.Matches(clip.Sentence, given)
+                    ? (true, null)
+                    : (false, SentenceTiles.SameCharacters(clip.Sentence, given)
+                        ? "Right characters, wrong order."
+                        : null),
+
             ListeningMode.Pinyin =>
                 AnswerCheck.PinyinMatches(clip.Pinyin, given)
                     ? (true, null)
@@ -236,6 +245,8 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     {
         ListeningMode.Pinyin => clip.Pinyin,
         ListeningMode.English => clip.English,
+        // The sentence is shown beside this either way; the reading is what you could not check
+        ListeningMode.Ordering => clip.Pinyin,
         _ => "",
     };
 
@@ -250,6 +261,9 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
 
         ListeningMode.Pinyin =>
             "No sentence has its pinyin yet. Import sentences with pinyin and English in Chinese TTS.",
+
+        ListeningMode.Ordering when clips.Count == 0 =>
+            "No sentences yet. Add some in Chinese TTS.",
 
         _ => "No sentence has an English translation yet. Import sentences with pinyin and English in Chinese TTS.",
     };
@@ -290,6 +304,10 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         // Only the translation needs disambiguating. Picking the sentence shows every candidate
         // already, and pinyin is the same for every member of a group — that is what makes them a
         // group. Naming the character in those modes would just hand over the answer.
+        var tiles = mode == ListeningMode.Ordering
+            ? SentenceTiles.Build(answer, allClips, HomophoneLookup(groups))
+            : null;
+
         var hints = mode == ListeningMode.English
             ? Homophones.Ambiguities(answer.Sentence, groups)
                 .Select(a => new QuizHint(a.Character, a.Alternatives))
@@ -299,7 +317,19 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         var token = Guid.NewGuid();
         cache.Set(CacheKey(token), new QuestionState { ClipId = answer.Id, Mode = mode }, TokenLifetime);
 
-        return new QuizQuestion(token, mode, IsTyped(mode), options, hints is { Count: > 0 } ? hints : null);
+        return new QuizQuestion(token, mode, IsTyped(mode), options, hints is { Count: > 0 } ? hints : null, tiles);
+    }
+
+    /// <summary>Each sound-alike character to the whole group it belongs to.</summary>
+    private static Dictionary<string, string> HomophoneLookup(IEnumerable<HomophoneGroup> groups)
+    {
+        var lookup = new Dictionary<string, string>();
+
+        foreach (var group in groups)
+            foreach (var rune in Homophones.Runes(group.Characters))
+                lookup.TryAdd(rune.ToString(), group.Characters);
+
+        return lookup;
     }
 
     /// <summary>
@@ -401,6 +431,8 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     {
         ListeningMode.Characters => Pickable(clips, audible),
         ListeningMode.Pinyin => clips.Where(c => c.Pinyin.Length > 0).ToList(),
+        // Ordering asks for the characters themselves, so every sentence qualifies
+        ListeningMode.Ordering => clips,
         _ => clips.Where(c => c.English.Length > 0).ToList(),
     };
 

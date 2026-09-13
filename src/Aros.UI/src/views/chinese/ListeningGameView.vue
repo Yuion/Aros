@@ -50,8 +50,45 @@
 
       <p class="mode-label">{{ MODE_LABELS[mode] }}</p>
 
+      <!-- Build it from tiles: which characters, and in what order -->
+      <div v-if="mode === 'Ordering'" class="tiles">
+        <div class="built" :class="{ empty: !built.length }" lang="zh">
+          <button
+            v-for="(character, i) in built"
+            :key="i"
+            class="built-tile"
+            :disabled="!!answer"
+            title="Take it back"
+            @click="takeBack(i)"
+          >
+            {{ character }}
+          </button>
+          <span v-if="!built.length" class="built-hint">Tap the characters in the order you heard them</span>
+        </div>
+
+        <ul class="bank">
+          <li v-for="(tile, i) in current.tiles" :key="i">
+            <button
+              class="tile"
+              :disabled="!!answer || used.includes(i)"
+              :class="{ used: used.includes(i) }"
+              lang="zh"
+              @click="place(i)"
+            >
+              {{ tile }}
+              <span v-if="i < 9" class="key">{{ i + 1 }}</span>
+            </button>
+          </li>
+        </ul>
+
+        <div class="tile-actions">
+          <button v-if="!answer" class="ghost" :disabled="!built.length" @click="clearBuilt">Clear</button>
+          <button v-if="!answer" class="primary" :disabled="!built.length" @click="submitBuilt">Check</button>
+        </div>
+      </div>
+
       <!-- Pick the sentence -->
-      <ul v-if="!typed" class="options">
+      <ul v-if="!typed && mode !== 'Ordering'" class="options">
         <li v-for="option in current.options" :key="option.clipId">
           <button
             class="option"
@@ -125,6 +162,7 @@ const CORRECT_PAUSE = 1000
 
 const MODE_LABELS = {
   Characters: 'Pick what you heard',
+  Ordering: 'Build what you heard',
   Pinyin: 'Write the pinyin',
   English: 'Write the English',
 }
@@ -143,6 +181,12 @@ const finished = ref(false)
 // What was missed in this round, in the order it was missed, kept for the scorecard and the
 // drill that follows it
 const missed = ref([])
+
+// Indexes into current.tiles, in the order they were tapped — indexes rather than characters, so
+// two tiles showing the same character stay distinguishable
+const used = ref([])
+
+const built = computed(() => used.value.map((i) => current.value?.tiles?.[i] ?? ''))
 const loading = ref(true)
 const error = ref('')
 const player = ref(null)
@@ -156,7 +200,7 @@ let playing = 0
 const current = computed(() => questions.value[index.value])
 
 // A right answer in a writing mode moves on by itself; everything else waits for Next
-const autoAdvancing = computed(() => !!answer.value?.correct && typed.value)
+const autoAdvancing = computed(() => !!answer.value?.correct && mode.value !== 'Characters')
 
 // Only a translation can be overruled: pinyin is marked exactly on purpose, and picking the
 // sentence has one right answer with nothing to argue about.
@@ -202,6 +246,7 @@ async function loadQuiz(build = null) {
   index.value = 0
   correctCount.value = 0
   missed.value = []
+  used.value = []
 
   try {
     // Length is decided server-side: every clip not resting, or ten of them
@@ -259,6 +304,57 @@ async function submitTyped() {
   await send({ text: text.value })
 }
 
+function place(index) {
+  if (answer.value || used.value.includes(index)) return
+  used.value = [...used.value, index]
+}
+
+function takeBack(position) {
+  if (answer.value) return
+  used.value = used.value.filter((_, i) => i !== position)
+}
+
+function clearBuilt() {
+  used.value = []
+}
+
+async function submitBuilt() {
+  if (answer.value || !built.value.length) return
+  await send({ text: built.value.join('') })
+}
+
+/**
+ * Building a sentence with no mouse. Only the first nine tiles get a key — a long sentence runs
+ * past the digits, and inventing a second row of keys for the tail would be worse than clicking it.
+ */
+function onKey(event) {
+  if (loading.value || finished.value || answer.value) return
+  if (mode.value !== 'Ordering') return
+  if (event.ctrlKey || event.altKey || event.metaKey) return
+
+  if (event.key >= '1' && event.key <= '9') {
+    place(Number(event.key) - 1)
+    event.preventDefault()
+    return
+  }
+
+  if (event.key === 'Backspace') {
+    takeBack(used.value.length - 1)
+    event.preventDefault()               // otherwise the browser treats it as Back
+    return
+  }
+
+  if (event.key === 'Escape') {
+    clearBuilt()
+    return
+  }
+
+  if (event.key === 'Enter') {
+    submitBuilt()
+    event.preventDefault()
+  }
+}
+
 async function send(payload) {
   try {
     const result = await api.post('/listening/answer', { token: current.value.token, ...payload })
@@ -281,7 +377,7 @@ async function send(payload) {
 
       // Right answers carry nothing to read, so hold the ✓ briefly and move on. A miss
       // waits: the sentence and its expected answer are the whole point of showing it.
-      if (typed.value) advance = setTimeout(next, CORRECT_PAUSE)
+      if (mode.value !== 'Characters') advance = setTimeout(next, CORRECT_PAUSE)
     }
 
     // Enter now works the Next button, so a whole round needs no mouse
@@ -316,6 +412,7 @@ async function next() {
 
   answer.value = null
   text.value = ''
+  used.value = []
 
   if (index.value + 1 >= questions.value.length) {
     finished.value = true
@@ -329,8 +426,12 @@ async function next() {
   field.value?.focus()
 }
 
-onMounted(loadQuiz)
+onMounted(() => {
+  window.addEventListener('keydown', onKey)
+  loadQuiz()
+})
 onUnmounted(() => {
+  window.removeEventListener('keydown', onKey)
   clearTimeout(advance)
   release()
 })
@@ -428,6 +529,111 @@ onUnmounted(() => {
 }
 
 /* Not a giveaway but a fair chance: the sound alone cannot tell these apart */
+.tiles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+/* What you have built so far, and the only place order is visible */
+.built {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-height: 3.4rem;
+  padding: 0.5rem;
+  border: 1px dashed #d8d5ea;
+  border-radius: 10px;
+  background: #fbfaff;
+  align-items: center;
+}
+
+.built.empty {
+  justify-content: center;
+}
+
+.built-hint {
+  font-size: 0.76rem;
+  color: #9ca3af;
+}
+
+.built-tile {
+  font-family: inherit;
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid #6d5bd0;
+  border-radius: 8px;
+  background: white;
+  color: #1a1a1a;
+  cursor: pointer;
+}
+
+.bank {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: center;
+}
+
+.tile {
+  position: relative;
+  font-family: inherit;
+  font-size: 1.5rem;
+  line-height: 1;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: white;
+  color: #1a1a1a;
+  cursor: pointer;
+  transition: border-color 0.12s, transform 0.12s;
+}
+
+.tile:hover:not(:disabled) {
+  border-color: #6d5bd0;
+  transform: translateY(-1px);
+}
+
+/* Spent tiles hold their place: a gap that moves is a hint about what you took */
+.tile.used {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.key {
+  position: absolute;
+  top: 0.08rem;
+  right: 0.2rem;
+  font-size: 0.55rem;
+  font-weight: 600;
+  color: #b8bcc4;
+  line-height: 1;
+}
+
+.tile-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.ghost {
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  color: #4b5563;
+  cursor: pointer;
+}
+
+.ghost:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .hints {
   list-style: none;
   display: flex;

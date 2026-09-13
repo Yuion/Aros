@@ -56,6 +56,10 @@
         You need at least 3 sentences to play. Your library has {{ clipCount }}.
         <RouterLink to="/chinese-tts">Add some in Chinese TTS →</RouterLink>
       </template>
+      <template v-else-if="mode === 'Ordering'">
+        No sentences yet.
+        <RouterLink to="/chinese-tts">Add some in Chinese TTS →</RouterLink>
+      </template>
       <template v-else>
         No sentence carries its {{ mode === 'Pinyin' ? 'pinyin' : 'English' }} yet — paste a batch
         with pinyin and English to unlock this mode.
@@ -109,6 +113,7 @@ import { api } from '@/services/api'
 
 const MODES = [
   { id: 'Characters', label: 'Pick it', blurb: 'Pick the sentence you heard.' },
+  { id: 'Ordering', label: 'Build it', blurb: 'Rebuild what you heard from character tiles.' },
   { id: 'Pinyin', label: 'Pinyin', blurb: 'Write the pinyin of what you heard.' },
   { id: 'English', label: 'English', blurb: 'Write the English of what you heard.' },
 ]
