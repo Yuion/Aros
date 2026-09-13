@@ -15,6 +15,14 @@ public class TtsClip
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    /// <summary>
+    /// Retired by hand: a sentence you know, taken out of the listening trainer without deleting
+    /// it or its audio. It counts as mastered in every mode, however its streaks actually stand,
+    /// and in the picking mode it stays available as a distractor — a known sentence is still a
+    /// good wrong option. Clearing this puts it straight back in the pool with its history intact.
+    /// </summary>
+    public DateTime? RetiredAt { get; set; }
+
     /// <summary>One row per mode practised — hearing and writing are scored apart.</summary>
     public ICollection<TtsClipStat> Stats { get; set; } = [];
 }

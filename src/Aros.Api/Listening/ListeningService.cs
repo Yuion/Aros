@@ -347,8 +347,9 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     /// says when the next sentence is due, so there is no reason to cut a rest short behind your back.
     /// </summary>
     private static List<TtsClip> Askable(List<TtsClip> clips, ListeningMode mode) =>
-        clips.Where(c => Stat(c, mode) is not { } s
-                         || Schedule(s).IsAvailable(s.ConsecutiveCorrect, s.LastSeenAt))
+        clips.Where(c => c.RetiredAt is null
+                         && (Stat(c, mode) is not { } s
+                             || Schedule(s).IsAvailable(s.ConsecutiveCorrect, s.LastSeenAt)))
              .ToList();
 
     /// <summary>A sentence missed even once climbs the longer ladder.</summary>
@@ -382,10 +383,18 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     private static Availability Tally(List<TtsClip> clips, ListeningMode mode) =>
         Availability.From(mode.ToString(), clips.Select(c => Standing(c, mode)));
 
-    public static Availability.Standing Standing(TtsClip clip, ListeningMode mode) =>
-        Stat(clip, mode) is { } stat
+    public static Availability.Standing Standing(TtsClip clip, ListeningMode mode)
+    {
+        // Retired by hand counts as mastered everywhere, so the bars and the start button agree
+        // with the trainer rather than offering a sentence it will not ask
+        if (clip.RetiredAt is not null)
+            return new Availability.Standing(
+                RestSchedule.ListeningClean, (RestSchedule.ListeningClean.MasteryStreak, null));
+
+        return Stat(clip, mode) is { } stat
             ? new Availability.Standing(Schedule(stat), (stat.ConsecutiveCorrect, stat.LastSeenAt))
             : new Availability.Standing(RestSchedule.ListeningClean, null);
+    }
 
     internal static TtsClipStat? Stat(TtsClip clip, ListeningMode mode) =>
         clip.Stats.FirstOrDefault(s => s.Mode == mode);

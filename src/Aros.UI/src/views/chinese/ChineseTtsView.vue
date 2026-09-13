@@ -106,18 +106,77 @@
     <audio ref="player" controls class="player" />
 
     <section class="library">
-      <h2>Library <span class="count">{{ clips.length }}</span></h2>
+      <h2>
+        Library <span class="count">{{ shown.length }}</span>
+        <span v-if="shown.length !== clips.length" class="of">of {{ clips.length }}</span>
+      </h2>
+
+      <div v-if="clips.length" class="tools">
+        <input
+          v-model="search"
+          class="search"
+          type="search"
+          placeholder="Find a sentence, reading or meaning"
+        />
+
+        <div class="sort">
+          <select v-model="sort" class="sort-by" aria-label="Sort by">
+            <option value="added">Added</option>
+            <option value="alphabetical">Pinyin A–Z</option>
+            <option value="practice">Times practised</option>
+          </select>
+          <button class="sort-dir" :title="directionLabel" @click="descending = !descending">
+            {{ descending ? '↓' : '↑' }} <span class="dir-label">{{ directionLabel }}</span>
+          </button>
+        </div>
+      </div>
 
       <p v-if="!clips.length" class="empty">Nothing yet. Speak a sentence to start your library.</p>
+      <p v-else-if="!shown.length" class="empty">Nothing matches “{{ search }}”.</p>
 
       <ul v-else class="clip-list">
-        <li v-for="clip in clips" :key="clip.id" class="clip">
-          <button class="icon-btn" title="Play" @click="play(clip.audioUrl)">▶</button>
-          <span class="clip-sentence" lang="zh">{{ clip.sentence }}</span>
-          <span v-if="clip.correctCount || clip.wrongCount" class="score">
-            {{ clip.correctCount }}✓ / {{ clip.wrongCount }}✗
-          </span>
-          <button class="icon-btn danger" title="Delete" @click="remove(clip)">✕</button>
+        <li v-for="clip in shown" :key="clip.id" class="clip" :class="{ retired: clip.retiredAt }">
+          <!-- The whole row opens it: the readings and the per-mode record live underneath, so the
+               list stays one line per sentence until you ask for more -->
+          <div class="clip-head" @click="expand(clip.id)">
+            <button class="icon-btn" title="Play" @click.stop="play(clip.audioUrl)">▶</button>
+            <span class="clip-sentence" lang="zh">{{ clip.sentence }}</span>
+            <span v-if="clip.retiredAt" class="tag">retired</span>
+            <span v-else-if="clip.correctCount || clip.wrongCount" class="score">
+              {{ clip.correctCount }}✓ / {{ clip.wrongCount }}✗
+            </span>
+            <span v-else class="score faint">unpractised</span>
+            <span class="caret">{{ opened === clip.id ? '▾' : '▸' }}</span>
+          </div>
+
+          <div v-if="opened === clip.id" class="clip-body">
+            <p class="reading" :class="{ missing: !clip.pinyin }">
+              {{ clip.pinyin || 'No pinyin — the pinyin mode skips this sentence' }}
+            </p>
+            <p class="reading english" :class="{ missing: !clip.english }">
+              {{ clip.english || 'No translation — the English mode skips this sentence' }}
+            </p>
+
+            <!-- Apart, not added up: a sentence can be solid when you pick it out of four and
+                 hopeless when you have to write the English -->
+            <ul class="modes">
+              <li v-for="m in clip.modes" :key="m.mode" class="mode">
+                <span class="mode-name">{{ MODE_LABELS[m.mode] ?? m.mode }}</span>
+                <span class="mode-score">{{ m.correct }}✓ / {{ m.wrong }}✗</span>
+                <span class="mode-state" :class="m.state">{{ stateLabel(m) }}</span>
+              </li>
+            </ul>
+
+            <div class="clip-actions">
+              <button class="secondary-btn" :disabled="retiring === clip.id" @click="retire(clip)">
+                {{ clip.retiredAt ? 'Put back in rotation' : 'Retire as mastered' }}
+              </button>
+              <button class="icon-btn danger" title="Delete and remove the audio" @click="remove(clip)">
+                ✕ Delete
+              </button>
+              <span class="added">added {{ day(clip.createdAt) }}</span>
+            </div>
+          </div>
         </li>
       </ul>
     </section>
@@ -125,8 +184,23 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { api } from '@/services/api'
+import { clip as clipAudio, release } from '@/services/audio'
+
+const MODE_LABELS = {
+  Characters: 'Pick the sentence',
+  Pinyin: 'Write the pinyin',
+  English: 'Write the English',
+}
+
+// Ascending first, descending second — the button says which it is rather than leaving an arrow
+// to be interpreted
+const SORT_LABELS = {
+  added: ['oldest first', 'newest first'],
+  alphabetical: ['A to Z', 'Z to A'],
+  practice: ['least practised', 'most practised'],
+}
 
 const STORAGE_KEY = 'aros.tts.sections'
 
@@ -163,6 +237,70 @@ const lastResult = ref(null)
 const error = ref('')
 const loading = ref(false)
 const player = ref(null)
+
+const search = ref('')
+const sort = ref('added')
+const descending = ref(true)
+const opened = ref(null)
+const retiring = ref(null)
+
+const directionLabel = computed(() => SORT_LABELS[sort.value][descending.value ? 1 : 0])
+
+/**
+ * The list as shown. Chinese has no useful alphabetical order of its own, so "A–Z" sorts on the
+ * pinyin and a sentence that has none sorts on its characters rather than collecting at one end.
+ */
+const shown = computed(() => {
+  const needle = search.value.trim().toLowerCase()
+
+  const matching = needle
+    ? clips.value.filter((c) =>
+        [c.sentence, c.pinyin, c.english].some((field) => (field ?? '').toLowerCase().includes(needle))
+      )
+    : [...clips.value]
+
+  const by = {
+    added: (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
+    alphabetical: (a, b) => (a.pinyin || a.sentence).localeCompare(b.pinyin || b.sentence),
+    practice: (a, b) => a.correctCount + a.wrongCount - (b.correctCount + b.wrongCount),
+  }[sort.value]
+
+  matching.sort(by)
+  if (descending.value) matching.reverse()
+
+  return matching
+})
+
+function expand(id) {
+  opened.value = opened.value === id ? null : id
+}
+
+function stateLabel(mode) {
+  if (mode.state === 'retired') return 'retired'
+  if (mode.state === 'unavailable') return 'not asked here'
+  if (mode.state === 'mastered') return 'mastered'
+  if (mode.state === 'resting') return 'resting · back ' + mode.due
+
+  return mode.streak > 0 ? 'ready · ' + mode.streak + ' in a row' : 'ready'
+}
+
+function day(value) {
+  return value ? String(value).slice(0, 10) : ''
+}
+
+/** Out of the trainer without being deleted, and back again — the streaks are never touched. */
+async function retire(target) {
+  retiring.value = target.id
+  error.value = ''
+
+  try {
+    Object.assign(target, await api.put('/tts/clips/' + target.id + '/retired', { retired: !target.retiredAt }))
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    retiring.value = null
+  }
+}
 
 async function checkDump() {
   error.value = ''
@@ -219,10 +357,18 @@ async function speak() {
   }
 }
 
-function play(url) {
-  if (!player.value) return
-  player.value.src = url
-  player.value.play().catch(() => {})
+async function play(url) {
+  const el = player.value
+  if (!el) return
+
+  // Fetched whole before it starts, for the reason the listening trainer does the same
+  try {
+    el.pause()
+    el.src = await clipAudio(url)
+    await el.play()
+  } catch {
+    // A refused autoplay or a missing file; the controls are right there to try again
+  }
 }
 
 async function remove(clip) {
@@ -238,6 +384,7 @@ async function remove(clip) {
 }
 
 onMounted(loadClips)
+onUnmounted(release)
 </script>
 
 <style scoped>
@@ -472,20 +619,178 @@ textarea:focus {
   gap: 0.4rem;
 }
 
+.tools {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.search {
+  flex: 1;
+  min-width: 12rem;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  background: white;
+}
+
+.sort {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.sort-by {
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  background: white;
+  cursor: pointer;
+}
+
+/* The arrow alone never says what "up" means for a date, so the words come with it */
+.sort-dir {
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  background: white;
+  color: #4b5563;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sort-dir:hover {
+  border-color: #6d5bd0;
+  color: #6d5bd0;
+}
+
+.of {
+  font-size: 0.72rem;
+  color: #9ca3af;
+}
+
 .clip {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.clip.retired {
+  background: #fafafa;
+  border-style: dashed;
+}
+
+.clip-head {
   display: flex;
   align-items: center;
   gap: 0.65rem;
   padding: 0.6rem 0.75rem;
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  cursor: pointer;
 }
 
 .clip-sentence {
   flex: 1;
   font-size: 1.05rem;
   word-break: break-word;
+}
+
+.clip.retired .clip-sentence {
+  color: #6b7280;
+}
+
+.tag {
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: #15803d;
+  background: #f0fdf4;
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  white-space: nowrap;
+}
+
+.clip-body {
+  padding: 0 0.75rem 0.7rem 2.1rem;
+  border-top: 1px solid #f3f4f6;
+  margin-top: -1px;
+  padding-top: 0.6rem;
+}
+
+.reading {
+  font-size: 0.85rem;
+  color: #6d5bd0;
+}
+
+.reading.english {
+  color: #4b5563;
+}
+
+.reading.missing {
+  color: #b8bcc4;
+  font-style: italic;
+  font-size: 0.78rem;
+}
+
+.modes {
+  list-style: none;
+  margin-top: 0.55rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.mode {
+  display: grid;
+  grid-template-columns: 9rem 5rem 1fr;
+  gap: 0.5rem;
+  align-items: baseline;
+  font-size: 0.76rem;
+  color: #6b7280;
+}
+
+.mode-name {
+  color: #4b5563;
+  font-weight: 600;
+}
+
+.mode-state.ready {
+  color: #6d5bd0;
+}
+
+.mode-state.mastered,
+.mode-state.retired {
+  color: #15803d;
+}
+
+.mode-state.resting {
+  color: #92400e;
+}
+
+.mode-state.unavailable {
+  color: #b8bcc4;
+}
+
+.clip-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.added {
+  margin-left: auto;
+  font-size: 0.7rem;
+  color: #9ca3af;
+}
+
+.score.faint {
+  color: #c4c7cd;
 }
 
 .score {

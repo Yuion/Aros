@@ -1,4 +1,7 @@
 using Aros.Api.Data;
+using Aros.Api.Data.Entities;
+using Aros.Api.Listening;
+using Aros.Api.Scheduling;
 using Aros.Api.Text;
 using Aros.Api.Tts;
 using Microsoft.AspNetCore.Mvc;
@@ -7,6 +10,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Aros.Api.Controllers;
 
 public record SpeakRequest(string? Text);
+
+public record RetireRequest(bool Retired);
 
 [ApiController]
 [Route("api/[controller]")]
@@ -115,23 +120,86 @@ public class TtsController(AppDbContext db, TtsService tts) : ControllerBase
             .Include(c => c.Stats)
             .OrderByDescending(c => c.CreatedAt)
             .AsNoTracking()
-            .Select(c => new
-            {
-                id = c.Id,
-                sentence = c.Sentence,
-                pinyin = c.Pinyin,
-                english = c.English,
-                voice = c.Voice,
-                durationSeconds = c.DurationSeconds,
-                createdAt = c.CreatedAt,
-                correctCount = c.Stats.Sum(s => s.CorrectCount),
-                wrongCount = c.Stats.Sum(s => s.WrongCount),
-                audioUrl = $"/api/tts/clips/{c.Id}/audio",
-            })
             .ToListAsync(ct);
 
-        return Ok(clips);
+        return Ok(clips.Select(Describe));
     }
+
+    /// <summary>
+    /// Retire a sentence you know, or put it back. Nothing is deleted: the audio, the readings and
+    /// every streak stay, and the trainer simply stops asking.
+    /// </summary>
+    [HttpPut("clips/{id:int}/retired")]
+    public async Task<IActionResult> Retire(int id, [FromBody] RetireRequest request, CancellationToken ct)
+    {
+        var clip = await db.TtsClips.Include(c => c.Stats).FirstOrDefaultAsync(c => c.Id == id, ct);
+        if (clip is null) return NotFound();
+
+        clip.RetiredAt = request.Retired ? DateTime.UtcNow : null;
+        await db.SaveChangesAsync(ct);
+
+        return Ok(Describe(clip));
+    }
+
+    /// <summary>
+    /// One clip as the library shows it. The modes are reported apart: a sentence can be solid
+    /// when you pick it out of four and hopeless when you have to write the English, and one
+    /// merged score hides exactly the half worth practising.
+    /// </summary>
+    private static object Describe(TtsClip clip) => new
+    {
+        id = clip.Id,
+        sentence = clip.Sentence,
+        pinyin = clip.Pinyin,
+        english = clip.English,
+        voice = clip.Voice,
+        durationSeconds = clip.DurationSeconds,
+        createdAt = clip.CreatedAt,
+        retiredAt = clip.RetiredAt,
+        correctCount = clip.Stats.Sum(s => s.CorrectCount),
+        wrongCount = clip.Stats.Sum(s => s.WrongCount),
+        modes = Enum.GetValues<ListeningMode>().Select(mode => Mode(clip, mode)),
+        audioUrl = $"/api/tts/clips/{clip.Id}/audio",
+    };
+
+    private static object Mode(TtsClip clip, ListeningMode mode)
+    {
+        var stat = ListeningService.Stat(clip, mode);
+        var schedule = RestSchedule.ForListening(stat?.WrongCount ?? 0);
+        var streak = stat?.ConsecutiveCorrect ?? 0;
+
+        // Why it cannot be asked, in the order that decides it: retired by hand, finished on the
+        // ladder, waiting out a rest, or missing the reading the mode needs
+        var restingUntil = stat is null ? null : schedule.RestingUntil(streak, stat.LastSeenAt);
+        var resting = restingUntil is { } until && until > DateTime.UtcNow;
+
+        var state =
+            clip.RetiredAt is not null ? "retired"
+            : !Possible(clip, mode) ? "unavailable"
+            : schedule.IsMastered(streak) ? "mastered"
+            : resting ? "resting"
+            : "ready";
+
+        return new
+        {
+            mode = mode.ToString(),
+            state,
+            correct = stat?.CorrectCount ?? 0,
+            wrong = stat?.WrongCount ?? 0,
+            streak,
+            lastSeenAt = stat?.LastSeenAt,
+            dueAt = resting ? restingUntil : null,
+            due = resting ? Availability.Due(restingUntil!.Value) : null,
+        };
+    }
+
+    /// <summary>A mode can only ask what the sentence carries: pinyin and English are optional.</summary>
+    private static bool Possible(TtsClip clip, ListeningMode mode) => mode switch
+    {
+        ListeningMode.Pinyin => clip.Pinyin.Length > 0,
+        ListeningMode.English => clip.English.Length > 0,
+        _ => true,
+    };
 
     [HttpGet("clips/{id:int}/audio")]
     public async Task<IActionResult> Audio(int id, CancellationToken ct)
