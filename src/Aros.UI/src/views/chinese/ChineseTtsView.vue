@@ -284,8 +284,10 @@ function stateLabel(mode) {
   return mode.streak > 0 ? 'ready · ' + mode.streak + ' in a row' : 'ready'
 }
 
+// Stored in UTC, read in your evening: slicing the ISO string would call last night's import
+// yesterday's for half the day
 function day(value) {
-  return value ? String(value).slice(0, 10) : ''
+  return value ? new Date(value).toLocaleDateString() : ''
 }
 
 /** Out of the trainer without being deleted, and back again — the streaks are never touched. */
