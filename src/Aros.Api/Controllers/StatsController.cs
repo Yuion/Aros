@@ -14,6 +14,7 @@ public class StatsController(
     AppDbContext db,
     ListeningService listening,
     VocabService vocab,
+    Aros.Api.Grammar.GrammarService grammar,
     Tutor.LessonRuntimeService runtimeService) : ControllerBase
 {
     private const int TrendDays = 30;
@@ -269,6 +270,115 @@ public class StatsController(
     /// Exercises attach by date: they are keyed to a runtime lesson id, which is not the same thing
     /// as a lesson number, and inventing a link would be worse than a rough one.
     /// </summary>
+    /// <summary>
+    /// The grammar trainer's side of the course. Patterns are scheduled rather than sentences, so
+    /// the counts here are patterns — and the thing worth seeing is not the total but the shape of
+    /// the tail: which patterns were taught once and never produced since.
+    /// </summary>
+    [HttpGet("grammar")]
+    public async Task<IActionResult> Grammar(CancellationToken ct)
+    {
+        var overview = await grammar.OverviewAsync(ct);
+        var standing = await grammar.AvailabilityAsync(ct);
+        var lessons = await db.Lessons.AsNoTracking()
+            .ToDictionaryAsync(l => l.Number, l => l.Date.ToString("yyyy-MM-dd"), ct);
+
+        var practised = overview.Where(row => row.Progress is { } p && p.CorrectCount + p.WrongCount > 0).ToList();
+
+        var correct = practised.Sum(row => row.Progress!.CorrectCount);
+        var wrong = practised.Sum(row => row.Progress!.WrongCount);
+        var answers = correct + wrong;
+
+        var totals = new
+        {
+            patterns = overview.Count,
+            withDrills = overview.Count(row => row.Items > 0),
+            drills = overview.Sum(row => row.Items),
+            practised = practised.Count,
+            neverPractised = overview.Count(row => row.Items > 0 && row.Progress is null),
+            noDrills = overview.Count(row => row.Items == 0),
+            answers,
+            correct,
+            wrong,
+            accuracy = answers == 0 ? (double?)null : (double)correct / answers,
+            ready = standing.Ready,
+            resting = standing.Resting,
+            mastered = standing.Mastered,
+            nextDueAt = standing.NextDueAt,
+            nextDue = standing.NextDueAt is { } due ? Availability.Due(due) : null,
+            lastPractised = practised.Count == 0 ? null : practised.Max(row => row.Progress!.LastSeenAt),
+        };
+
+        var since = DateTime.UtcNow.Date.AddDays(-(TrendDays - 1));
+
+        var history = await db.GrammarAnswers
+            .Where(a => a.AnsweredAt >= since)
+            .AsNoTracking()
+            .Select(a => new { a.AnsweredAt, a.Correct })
+            .ToListAsync(ct);
+
+        var daily = history
+            .GroupBy(a => DateOnly.FromDateTime(a.AnsweredAt.ToLocalTime()))
+            .OrderBy(g => g.Key)
+            .Select(g => new
+            {
+                date = g.Key.ToString("yyyy-MM-dd"),
+                answers = g.Count(),
+                correct = g.Count(a => a.Correct),
+                accuracy = (double)g.Count(a => a.Correct) / g.Count(),
+            })
+            .ToList();
+
+        // Worst first — the study list, and the reason the trainer exists
+        var needsWork = practised
+            .Where(row => row.Progress!.WrongCount > 0 && row.State != "mastered")
+            .Select(row => new
+            {
+                title = row.Point.Title,
+                attempts = row.Progress!.CorrectCount + row.Progress.WrongCount,
+                correct = row.Progress.CorrectCount,
+                wrong = row.Progress.WrongCount,
+                accuracy = (double)row.Progress.CorrectCount / (row.Progress.CorrectCount + row.Progress.WrongCount),
+                state = row.State,
+            })
+            .OrderBy(row => row.accuracy)
+            .ThenByDescending(row => row.wrong)
+            .Take(10)
+            .ToList();
+
+        // Taught, drillable, and never once produced cold
+        var untouched = overview
+            .Where(row => row.Items > 0 && row.Progress is null)
+            .OrderBy(row => row.Point.IntroducedInLesson ?? int.MaxValue)
+            .Select(row => new
+            {
+                title = row.Point.Title,
+                introducedInLesson = row.Point.IntroducedInLesson,
+                date = row.Point.IntroducedInLesson is { } n && lessons.TryGetValue(n, out var on) ? on : null,
+                drills = row.Items,
+            })
+            .Take(20)
+            .ToList();
+
+        // A pattern with no drills cannot be practised at all, which is a gap in the library
+        // rather than in the learning
+        var missingDrills = overview
+            .Where(row => row.Items == 0)
+            .Select(row => new { title = row.Point.Title, introducedInLesson = row.Point.IntroducedInLesson })
+            .ToList();
+
+        // Patterns climb the vocabulary ladder, so the bands read the same way as the other tabs
+        var mastery = MasteryBands(practised.Select(row =>
+            (row.Progress!.ConsecutiveCorrect, RestSchedule.ForVocabulary(row.Progress.WrongCount))));
+
+        var historyStart = await db.GrammarAnswers
+            .OrderBy(a => a.AnsweredAt)
+            .Select(a => (DateTime?)a.AnsweredAt)
+            .FirstOrDefaultAsync(ct);
+
+        return Ok(new { totals, daily, needsWork, untouched, missingDrills, mastery, historyStart, trendDays = TrendDays });
+    }
+
     [HttpGet("tutor")]
     public async Task<IActionResult> TutorChronicle(CancellationToken ct)
     {
