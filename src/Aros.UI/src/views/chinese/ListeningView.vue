@@ -324,6 +324,7 @@ h1 {
 }
 
 .play-button {
+  font-family: inherit;
   display: flex;
   flex-direction: column;
   align-items: center;

@@ -693,6 +693,7 @@ onUnmounted(() => {
 }
 
 .primary {
+  font-family: inherit;
   padding: 0.6rem 1.4rem;
   font-size: 0.9rem;
   font-weight: 600;
