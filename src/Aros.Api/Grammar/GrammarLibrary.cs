@@ -5,13 +5,14 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Aros.Api.Grammar;
 
-public record LibraryReport(int Points, int Added, int Skipped, int FromExercises, int FromExamples);
+public record LibraryReport(
+    int Points, int Added, int Skipped, int FromExercises, int FromExamples, int FromDrills);
 
 /// <summary>
-/// Builds the grammar trainer's question pool out of what the lessons already recorded. Nothing is
-/// written for the trainer: the items are the exercises the tutor set during a lesson and the
-/// examples it filed with each point. Both were worked through once with the tutor watching, which
-/// is what makes them fair to ask again cold.
+/// Builds the grammar trainer's question pool out of what the lessons recorded. Three sources, in
+/// descending order of how sure we are that an item belongs to its pattern: the drills the tutor
+/// wrote for that point, the examples it filed with the point, and the exercises it set during the
+/// lesson. All three were seen by the tutor, which is what makes them fair to ask again cold.
 ///
 /// An exercise knows its lesson and a lesson's write-up lists the grammar it introduced, so items
 /// inherit that lesson's points. An item can exercise more than one point and is filed under each:
@@ -22,6 +23,9 @@ public class GrammarLibrary(AppDbContext db, ILogger<GrammarLibrary> logger)
 {
     /// <summary>Examples arrive flattened by the course importer: 我吃鸡。 · wo3 chi1 ji1 · I eat chicken.</summary>
     private const string ExampleSeparator = " · ";
+
+    private const string ExampleSource = "example";
+    private const string DrillSource = "drill";
 
     public async Task<LibraryReport> RebuildAsync(CancellationToken ct)
     {
@@ -36,6 +40,7 @@ public class GrammarLibrary(AppDbContext db, ILogger<GrammarLibrary> logger)
         var skipped = 0;
         var fromExercises = 0;
         var fromExamples = 0;
+        var fromDrills = 0;
 
         foreach (var (point, prompt, answer, source) in await CandidatesAsync(points, ct))
         {
@@ -51,20 +56,34 @@ public class GrammarLibrary(AppDbContext db, ILogger<GrammarLibrary> logger)
             });
 
             added++;
-            if (source == "example") fromExamples++; else fromExercises++;
+            if (source == DrillSource) fromDrills++;
+            else if (source == ExampleSource) fromExamples++;
+            else fromExercises++;
         }
 
         await db.SaveChangesAsync(ct);
 
         logger.LogInformation("Grammar library rebuilt: {Added} added, {Skipped} skipped", added, skipped);
 
-        return new LibraryReport(points.Count, added, skipped, fromExercises, fromExamples);
+        return new LibraryReport(points.Count, added, skipped, fromExercises, fromExamples, fromDrills);
     }
 
     private async Task<List<(GrammarPoint Point, string Prompt, string Answer, string Source)>> CandidatesAsync(
         List<GrammarPoint> points, CancellationToken ct)
     {
         var candidates = new List<(GrammarPoint, string, string, string)>();
+
+        // Written for the point, by the tutor, to be asked here: nothing to attribute or filter
+        foreach (var point in points)
+        {
+            foreach (var drill in point.Drills)
+            {
+                var parts = drill.Split(ExampleSeparator);
+                if (parts.Length < 2) continue;
+
+                candidates.Add((point, parts[^1].Trim(), parts[0].Trim(), DrillSource));
+            }
+        }
 
         // The examples file themselves: each one already belongs to its point
         foreach (var point in points)
@@ -74,7 +93,7 @@ public class GrammarLibrary(AppDbContext db, ILogger<GrammarLibrary> logger)
                 var parts = example.Split(ExampleSeparator);
                 if (parts.Length < 3) continue;
 
-                candidates.Add((point, parts[^1].Trim(), parts[0].Trim(), "example"));
+                candidates.Add((point, parts[^1].Trim(), parts[0].Trim(), ExampleSource));
             }
         }
 

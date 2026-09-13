@@ -48,6 +48,11 @@ public static class LessonSchema
                 ["status"] = Enum(["introduced", "learned", "shaky"]),
                 ["introduced_lesson"] = Number("The lesson number this belongs to."),
                 ["examples"] = Array(Text("An example sentence in Chinese.")),
+                ["drills"] = Array(Object(new JsonObject
+                {
+                    ["english"] = Text("The prompt, in English."),
+                    ["chinese"] = Text("The answer: characters and punctuation only."),
+                })),
             })),
 
             ["pronunciation_rules"] = Array(Object(new JsonObject

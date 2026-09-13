@@ -53,7 +53,8 @@
         </p>
         <p v-if="report" class="report">
           {{ report.added }} added, {{ report.skipped }} already held —
-          {{ report.fromExercises }} from exercises, {{ report.fromExamples }} from examples.
+          {{ report.fromDrills }} written for a pattern, {{ report.fromExamples }} from examples,
+          {{ report.fromExercises }} from exercises.
         </p>
 
         <ul class="points">

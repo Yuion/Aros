@@ -43,6 +43,11 @@ public class LessonRecorder(
         - sentences are the listening sentences for today's material: natural, using only what the
           learner now knows. Each one is synthesized and costs a call, so ten is generous and
           thirty is not. Give the spoken pinyin, after sandhi.
+        - drills, on each grammar point, are practice items for the grammar trainer, which asks
+          them cold days later: an English prompt and the Chinese answer it expects. Four to six
+          per point that was introduced or corrected today. Use only words the learner knows, vary
+          the subject and the sentence, and write the prompt so that exactly one Chinese answer is
+          right. A point the lesson only mentioned in passing needs none.
         - new_vocabulary lists the same words as characters only, for the lesson record.
         - This lesson is number LESSON_NUMBER and today is TODAY.
         """;

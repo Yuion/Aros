@@ -39,7 +39,13 @@ public record GrammarSection(
     [property: JsonPropertyName("summary")] string? Summary,
     [property: JsonPropertyName("status")] string? Status,
     [property: JsonPropertyName("introduced_lesson")] int? IntroducedLesson,
-    [property: JsonPropertyName("examples")] List<JsonElement>? Examples);
+    [property: JsonPropertyName("examples")] List<JsonElement>? Examples,
+    [property: JsonPropertyName("drills")] List<DrillSection>? Drills);
+
+/// <summary>One practice item written for a pattern: an English prompt and its Chinese answer.</summary>
+public record DrillSection(
+    [property: JsonPropertyName("english")] string? English,
+    [property: JsonPropertyName("chinese")] string? Chinese);
 
 public record RuleSection(
     [property: JsonPropertyName("id")] string? Id,
@@ -293,10 +299,34 @@ public class CourseImporter(
             point.Status = ParseStatus(item.Status);
             point.IntroducedInLesson = item.IntroducedLesson ?? point.IntroducedInLesson;
             point.Examples = Lines(item.Examples) ?? point.Examples;
+            point.Drills = Drills(item.Drills) ?? point.Drills;
             written++;
         }
 
         return written;
+    }
+
+    /// <summary>
+    /// The drills written for a pattern, flattened the way examples are so both read the same in
+    /// the database. A drill missing either half is not a question, and is dropped.
+    /// </summary>
+    private static List<string>? Drills(List<DrillSection>? items)
+    {
+        if (items is null) return null;
+
+        var lines = new List<string>();
+
+        foreach (var item in items)
+        {
+            var chinese = (item.Chinese ?? "").Trim();
+            var english = (item.English ?? "").Trim();
+
+            if (chinese.Length == 0 || english.Length == 0) continue;
+
+            lines.Add(chinese + " · " + english);
+        }
+
+        return lines;
     }
 
     private async Task<int> ImportRulesAsync(List<RuleSection>? items, CancellationToken ct)

@@ -116,6 +116,7 @@ public class GrammarController(GrammarService grammar, GrammarLibrary library) :
             skipped = report.Skipped,
             fromExercises = report.FromExercises,
             fromExamples = report.FromExamples,
+            fromDrills = report.FromDrills,
         });
     }
 }

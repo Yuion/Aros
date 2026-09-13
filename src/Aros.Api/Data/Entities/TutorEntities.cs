@@ -85,6 +85,14 @@ public class GrammarPoint
     public GrammarStatus Status { get; set; }
     public int? IntroducedInLesson { get; set; }
     public List<string> Examples { get; set; } = [];
+
+    /// <summary>
+    /// Drills the tutor wrote for this pattern, flattened as 我也去。 · I go too. The examples above
+    /// illustrate the pattern inside the write-up; these exist to be asked cold in the trainer,
+    /// which is why they are kept apart from them.
+    /// </summary>
+    public List<string> Drills { get; set; } = [];
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
