@@ -111,8 +111,9 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { api } from '@/services/api'
 
+// Picking the sentence out of three is retired: building it from tiles asks the same thing
+// without showing you the answer first. Its history is still in the stats.
 const MODES = [
-  { id: 'Characters', label: 'Pick it', blurb: 'Pick the sentence you heard.' },
   { id: 'Ordering', label: 'Build it', blurb: 'Rebuild what you heard from character tiles.' },
   { id: 'Pinyin', label: 'Pinyin', blurb: 'Write the pinyin of what you heard.' },
   { id: 'English', label: 'English', blurb: 'Write the English of what you heard.' },
@@ -120,7 +121,7 @@ const MODES = [
 
 const router = useRouter()
 const clipCount = ref(0)
-const mode = ref('Characters')
+const mode = ref('Ordering')
 const loading = ref(true)
 
 const groups = ref([])

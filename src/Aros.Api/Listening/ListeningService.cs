@@ -39,6 +39,14 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     private static readonly TimeSpan TokenLifetime = TimeSpan.FromHours(2);
 
     /// <summary>Picking the sentence needs three options; writing what you heard needs a keyboard.</summary>
+    /// <summary>
+    /// The modes the trainer offers. Picking one of three is retired — building from tiles is the
+    /// same question with nothing given away — but its answers stay in the history, so the value
+    /// is still a real mode everywhere except here.
+    /// </summary>
+    public static readonly IReadOnlyList<ListeningMode> Asked =
+        [ListeningMode.Ordering, ListeningMode.Pinyin, ListeningMode.English];
+
     public static bool IsTyped(ListeningMode mode) =>
         mode is not (ListeningMode.Characters or ListeningMode.Ordering);
 
@@ -70,6 +78,10 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     public async Task<Quiz> BuildQuizAsync(
         int questionCount, ListeningMode mode, bool sweep, CancellationToken ct)
     {
+        if (!Asked.Contains(mode))
+            throw new ListeningException(
+                "Picking the sentence out of three is retired — build it from tiles instead.");
+
         var clips = await AudibleClipsAsync(ct);
 
         var groups = await db.HomophoneGroups.AsNoTracking().ToListAsync(ct);
@@ -457,8 +469,7 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
 
         return
         [
-            .. Enum.GetValues<ListeningMode>()
-                .Select(mode => Tally(Eligible(clips, mode, audible), mode))
+            .. Asked.Select(mode => Tally(Eligible(clips, mode, audible), mode))
         ];
     }
 
@@ -493,7 +504,7 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         clip.Stats.FirstOrDefault(s => s.Mode == mode);
 
     private static List<TtsClip> PickWeighted(List<TtsClip> clips, ListeningMode mode, int count) =>
-        DrawWeight.PickWithoutReplacement(clips, count, clip => Weight(clip, mode));
+        DrawWeight.PickWorstFirst(clips, count, clip => Weight(clip, mode));
 
     private static double Weight(TtsClip clip, ListeningMode mode) =>
         Stat(clip, mode) is { } stat

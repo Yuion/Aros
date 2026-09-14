@@ -6,7 +6,13 @@ namespace Aros.Api.Data.Entities;
 /// </summary>
 public enum ListeningMode
 {
-    /// <summary>Pick the sentence you heard, out of three. Needs nothing but the audio.</summary>
+    /// <summary>
+    /// Pick the sentence you heard, out of three. Retired: building the sentence from tiles asks
+    /// the same question without handing you the answer to recognise, so this one only ever tested
+    /// whether the distractors were good. The value stays for the history already recorded under
+    /// it — see <see cref="Aros.Api.Listening.ListeningService.Asked"/>, which is what the trainer
+    /// offers now.
+    /// </summary>
     Characters = 0,
 
     /// <summary>Write the pinyin of what you heard. Needs <see cref="TtsClip.Pinyin"/>.</summary>

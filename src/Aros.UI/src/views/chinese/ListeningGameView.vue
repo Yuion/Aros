@@ -173,7 +173,7 @@ const questions = ref([])
 const index = ref(0)
 const answer = ref(null)
 const text = ref('')
-const mode = ref('Characters')
+const mode = ref('Ordering')
 const typed = ref(false)
 const correctCount = ref(0)
 const finished = ref(false)
@@ -250,7 +250,7 @@ async function loadQuiz(build = null) {
 
   try {
     // Length is decided server-side: every clip not resting, or ten of them
-    const params = new URLSearchParams({ questions: '10', mode: route.query.mode ?? 'Characters' })
+    const params = new URLSearchParams({ questions: '10', mode: route.query.mode ?? 'Ordering' })
     if (route.query.sweep === 'false') params.set('sweep', 'false')
 
     const quiz = await (build ? build() : api.post(`/listening/quiz?${params}`))

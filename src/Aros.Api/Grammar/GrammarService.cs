@@ -75,7 +75,7 @@ public class GrammarService(AppDbContext db, IMemoryCache cache)
         var wanted = SessionBudget.Cap(
             sweep ? askable.Count : Math.Clamp(count, 1, askable.Count), SessionBudget.Grammar);
 
-        var drawn = DrawWeight.PickWithoutReplacement(
+        var drawn = DrawWeight.PickWorstFirst(
             askable, wanted, point => Weight(point, progress));
 
         var sentences = items.Select(i => i.Answer).Distinct().ToList();

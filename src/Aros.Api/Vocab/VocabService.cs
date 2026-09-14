@@ -120,7 +120,7 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
         {
             if (pool.Count == 0) continue;
 
-            var picked = DrawWeight.PickWithoutReplacement(
+            var picked = DrawWeight.PickWorstFirst(
                 pool, Math.Min(perBlock, pool.Count), word => Weight(word, direction));
 
             blocks.Add(picked.Select(word => BuildQuestion(word, direction, words)).ToList());
