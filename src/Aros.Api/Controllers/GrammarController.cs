@@ -47,6 +47,7 @@ public class GrammarController(GrammarService grammar, GrammarLibrary library) :
             restingOut = standing.RestingOut,
             nextDueAt = standing.NextDueAt,
             nextDue = standing.NextDueAt is { } due ? Aros.Api.Scheduling.Availability.Due(due) : null,
+            perSession = Aros.Api.Scheduling.SessionBudget.Grammar,
         });
     }
 

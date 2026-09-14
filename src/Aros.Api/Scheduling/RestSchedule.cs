@@ -15,14 +15,19 @@ public sealed record RestSchedule(int FirstRestStreak, IReadOnlyList<TimeSpan> R
     /// Vocabulary, for a word never missed in this direction. Rests begin at the first correct
     /// answer and the first two steps are hours rather than days: right once means it is sticking,
     /// not that it is learned, so it is held back for the session rather than the week.
+    ///
+    /// Four rungs, not five. Four out of five item-directions in the library have never once been
+    /// wrong, and they were sitting at a streak of 4.3 out of 5 — a fifth pass over something never
+    /// missed buys almost nothing and costs a question every time. A word that has never been
+    /// wrong now masters in four correct answers per direction instead of five, and the rung that
+    /// was 24 hours is 48.
     /// </summary>
     public static readonly RestSchedule VocabularyClean = new(
         FirstRestStreak: 1,
         Rests:
         [
             TimeSpan.FromHours(12),
-            TimeSpan.FromHours(24),
-            TimeSpan.FromHours(72),
+            TimeSpan.FromHours(48),
             TimeSpan.FromDays(7),
             TimeSpan.FromDays(28),
         ]);

@@ -64,7 +64,16 @@ public class GrammarService(AppDbContext db, IMemoryCache cache)
 
         if (askable.Count == 0) throw new GrammarException(NothingToAsk(points, items, progress));
 
-        var wanted = sweep ? askable.Count : Math.Clamp(count, 1, askable.Count);
+        // A pattern never drilled is new, not overdue: the trainer opened with all 34 due at once
+        var intake = SessionBudget.RemainingIntake(await IntroducedTodayAsync(ct));
+        askable = SessionBudget.WithIntake(askable, p => !progress.ContainsKey(p.Id), intake);
+
+        if (askable.Count == 0)
+            throw new GrammarException(
+                $"Today's {SessionBudget.NewPerDay} new patterns are done. The rest are waiting for tomorrow.");
+
+        var wanted = SessionBudget.Cap(
+            sweep ? askable.Count : Math.Clamp(count, 1, askable.Count), SessionBudget.Grammar);
 
         var drawn = DrawWeight.PickWithoutReplacement(
             askable, wanted, point => Weight(point, progress));
@@ -77,6 +86,17 @@ public class GrammarService(AppDbContext db, IMemoryCache cache)
             .ToList();
 
         return new GrammarRound(questions);
+    }
+
+    /// <summary>How many patterns were drilled for the first time today.</summary>
+    private async Task<int> IntroducedTodayAsync(CancellationToken ct)
+    {
+        var since = SessionBudget.TodayStartedAt;
+
+        return await db.GrammarAnswers
+            .GroupBy(a => a.GrammarPointId)
+            .Select(g => g.Min(a => a.AnsweredAt))
+            .CountAsync(first => first >= since, ct);
     }
 
     /// <summary>

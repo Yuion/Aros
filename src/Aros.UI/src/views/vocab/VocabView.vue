@@ -335,13 +335,23 @@ const availability = ref([])
 const roundLength = computed(() => {
   const ready = selected.value.ready
   if (!ready) return 'nothing ready'
-  if (sweep.value) return `${ready} questions`
 
-  const count = direction.value
-    ? Math.min(10, ready)
-    : availability.value.reduce((total, row) => total + Math.min(3, row.ready), 0)
+  // The budget is the sitting's, not each direction's, so it caps the whole round
+  const cap = selected.value.perSession ?? Infinity
+  const open = direction.value
+    ? ready
+    : availability.value.reduce((total, row) => total + row.ready, 0)
 
-  return `${count} questions`
+  const asked = sweep.value
+    ? Math.min(open, cap)
+    : Math.min(
+        cap,
+        direction.value
+          ? Math.min(10, ready)
+          : availability.value.reduce((total, row) => total + Math.min(3, row.ready), 0),
+      )
+
+  return asked < open ? `${asked} of ${open} questions` : `${asked} questions`
 })
 
 function readyFor(id) {

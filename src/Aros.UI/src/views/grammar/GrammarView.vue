@@ -36,7 +36,7 @@
         </div>
 
         <button class="primary" :disabled="!standing.ready" @click="start">
-          Start{{ standing.ready ? ` — ${sweep ? standing.ready : Math.min(10, standing.ready)} patterns` : '' }}
+          Start{{ standing.ready ? ` — ${roundLength}` : '' }}
         </button>
       </section>
 
@@ -90,7 +90,16 @@ const ROUND_MODES = [
 
 const router = useRouter()
 const points = ref([])
-const standing = ref({ ready: 0, resting: 0, mastered: 0 })
+const standing = ref({ ready: 0, resting: 0, mastered: 0, perSession: 0 })
+
+// Even "everything" stops at the session budget; what is left over keeps its place in the queue
+const roundLength = computed(() => {
+  const open = standing.value.ready
+  const cap = standing.value.perSession || open
+  const asked = Math.min(sweep.value ? open : 10, cap)
+
+  return asked < open ? `${asked} of ${open} patterns` : `${asked} patterns`
+})
 const sweep = ref(true)
 const loading = ref(true)
 const rebuilding = ref(false)

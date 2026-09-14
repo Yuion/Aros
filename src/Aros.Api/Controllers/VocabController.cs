@@ -247,6 +247,7 @@ public class VocabController(AppDbContext db, VocabService vocab, VocabImporter 
             restingOut = d.RestingOut,
             nextDueAt = d.NextDueAt,
             nextDue = d.NextDueAt is { } due ? Aros.Api.Scheduling.Availability.Due(due) : null,
+            perSession = Aros.Api.Scheduling.SessionBudget.Vocabulary,
         }));
     }
 

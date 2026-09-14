@@ -108,6 +108,7 @@ public class ListeningController(ListeningService listening, TtsService tts) : C
             restingOut = m.RestingOut,
             nextDueAt = m.NextDueAt,
             nextDue = m.NextDueAt is { } due ? Scheduling.Availability.Due(due) : null,
+            perSession = Scheduling.SessionBudget.Listening,
         }));
     }
 

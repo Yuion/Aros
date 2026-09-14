@@ -144,6 +144,7 @@ function row(id) {
       ready: 0,
       resting: 0,
       mastered: 0,
+      perSession: 0,
       total: 0,
       nextDue: '',
     }
@@ -157,12 +158,16 @@ function readyFor(id) {
 const selected = computed(() => row(mode.value))
 const ready = computed(() => selected.value.ready > 0)
 
-// What Play is about to hand you, so the size of a sweep is never a surprise
+// What Play is about to hand you, so the size of a sweep is never a surprise. Even "everything"
+// stops at the session budget — the rest keeps its place and comes first next time.
 const roundLength = computed(() => {
   const open = selected.value.ready
   if (!open) return 'nothing ready'
 
-  return `${sweep.value ? open : Math.min(10, open)} clips`
+  const cap = selected.value.perSession ?? open
+  const count = Math.min(sweep.value ? open : 10, cap)
+
+  return count < open ? `${count} of ${open} clips` : `${count} clips`
 })
 
 async function loadGroups() {

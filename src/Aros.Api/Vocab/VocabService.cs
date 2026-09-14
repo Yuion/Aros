@@ -56,8 +56,12 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
     /// that one, which is the only reason to filter.
     ///
     /// A <paramref name="sweep"/> takes the whole pool instead of a sample: every word that is not
-    /// resting, once each. The order is still drawn by weight, so the ones most due come up first,
-    /// but nothing is left out and the round ends when the pool does.
+    /// resting, once each. The order is still drawn by weight, so the ones most due come up first.
+    ///
+    /// Even a sweep stops at <see cref="SessionBudget.Vocabulary"/> questions, and meets at most
+    /// <see cref="SessionBudget.NewPerDay"/> words for the first time in a day. What does not fit
+    /// is not lost: it stays due, and being the most overdue thing in the pool it is drawn first
+    /// next time.
     /// </summary>
     public async Task<VocabSession> BuildSessionAsync(
         int perDirection, VocabDirection? only, string? tag, bool sweep, CancellationToken ct)
@@ -74,7 +78,12 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
                 direction => direction,
                 direction => words.Where(w => Directions(w, unique).Contains(direction)).ToList());
 
-        var candidates = testable.ToDictionary(pair => pair.Key, pair => Askable(pair.Value, pair.Key));
+        var intake = SessionBudget.RemainingIntake(await IntroducedTodayAsync(ct));
+
+        var candidates = testable.ToDictionary(
+            pair => pair.Key,
+            pair => SessionBudget.WithIntake(
+                Askable(pair.Value, pair.Key), word => Progress(word, pair.Key) is null, intake));
 
         if (candidates.Values.All(list => list.Count == 0))
         {
@@ -94,11 +103,16 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
                     : "Everything testable here is mastered. Add more vocabulary.");
         }
 
+        // The budget is the sitting's, not each direction's, so it is split across the
+        // directions that actually have something to ask
+        var active = Math.Max(1, candidates.Count(pair => pair.Value.Count > 0));
+        var share = Math.Max(1, SessionBudget.Vocabulary / active);
+
         var perBlock = sweep
-            ? int.MaxValue                   // the block is however much the direction has left
+            ? share
             : only is null
-                ? Math.Max(1, perDirection)
-                : SingleDirectionCount;      // filtering means drilling that one direction
+                ? Math.Min(Math.Max(1, perDirection), share)
+                : Math.Min(SingleDirectionCount, SessionBudget.Vocabulary);
 
         var blocks = new List<List<VocabQuestion>>();
 
@@ -116,6 +130,7 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
         var questions = blocks
             .OrderBy(_ => Random.Shared.Next())
             .SelectMany(block => block)
+            .Take(SessionBudget.Vocabulary)     // rounding the share up must not exceed the budget
             .ToList();
 
         return new VocabSession(questions);
@@ -378,6 +393,52 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
         _ => "English",
     };
 
+    /// <summary>
+    /// How many word-directions were met for the first time today. A direction's first answer is
+    /// the oldest one it has, so the day that answer landed on is the day it was introduced.
+    /// </summary>
+    private async Task<int> IntroducedTodayAsync(CancellationToken ct)
+    {
+        var since = SessionBudget.TodayStartedAt;
+
+        return await db.VocabAnswers
+            .GroupBy(a => new { a.VocabWordId, a.Direction })
+            .Select(g => g.Min(a => a.AnsweredAt))
+            .CountAsync(first => first >= since, ct);
+    }
+
+    /// <summary>
+    /// Producing is harder than recognising, and the two are not independent: writing 学校 for
+    /// "school" settles whether 学校 means school. So a correct answer in a producing direction
+    /// advances its recognising twin by a rung instead of asking it separately — which is what
+    /// made one word cost up to thirty questions before it was finished.
+    ///
+    /// Only for a twin that has never been missed. Once a direction has been got wrong it has to
+    /// be earned back directly: that is the whole reason the two ladders exist.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<VocabDirection, VocabDirection> Covers =
+        new Dictionary<VocabDirection, VocabDirection>
+        {
+            [VocabDirection.EnglishToCharacters] = VocabDirection.CharactersToEnglish,
+            [VocabDirection.PinyinToCharacters] = VocabDirection.CharactersToPinyin,
+            [VocabDirection.EnglishToPinyin] = VocabDirection.PinyinToEnglish,
+        };
+
+    private static void Credit(VocabWord word, VocabDirection direction)
+    {
+        if (!Covers.TryGetValue(direction, out var eased)) return;
+
+        var progress = Progress(word, eased);
+
+        // Never asked, or missed at least once: the credit is not enough on its own. A direction
+        // you have never tried is not one this can quietly finish for you.
+        if (progress is null || progress.WrongCount > 0) return;
+        if (Ladder(progress).IsMastered(progress.ConsecutiveCorrect)) return;
+
+        progress.ConsecutiveCorrect++;
+        progress.LastSeenAt = DateTime.UtcNow;
+    }
+
     private static void RecordScore(VocabWord word, VocabDirection direction, bool correct)
     {
         var progress = Progress(word, direction);
@@ -392,6 +453,7 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
         {
             progress.CorrectCount++;
             progress.ConsecutiveCorrect++;
+            Credit(word, direction);
         }
         else
         {

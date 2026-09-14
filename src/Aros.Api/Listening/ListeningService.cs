@@ -60,7 +60,12 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     /// <summary>
     /// A round of <paramref name="questionCount"/> clips, or — with <paramref name="sweep"/> —
     /// every sentence the mode can ask about that is not resting, once each. The order is drawn by
-    /// weight either way, so the ones most due come first; a sweep simply does not stop early.
+    /// weight either way, so the ones most due come first.
+    ///
+    /// Both stop at <see cref="SessionBudget.Listening"/>, and at most
+    /// <see cref="SessionBudget.NewPerDay"/> sentences are met for the first time in a day — which
+    /// is what a new mode needs, since turning Ordering on made all 75 of its sentences due in one
+    /// evening. Nothing is dropped: what does not fit stays due and is drawn first next time.
     /// </summary>
     public async Task<Quiz> BuildQuizAsync(
         int questionCount, ListeningMode mode, bool sweep, CancellationToken ct)
@@ -90,14 +95,38 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
                     : "Every sentence you can be asked here is mastered. Add new ones in Chinese TTS.");
         }
 
+        // An item never asked in this mode is new, not overdue
+        var intake = SessionBudget.RemainingIntake(await IntroducedTodayAsync(mode, ct));
+        askable = SessionBudget.WithIntake(askable, clip => Stat(clip, mode) is null, intake);
+
+        if (askable.Count == 0)
+            throw new ListeningException(
+                $"Today's {SessionBudget.NewPerDay} new sentences are done. The rest are waiting for tomorrow.");
+
         var wanted = sweep ? askable.Count : Math.Clamp(questionCount, 1, askable.Count);
-        var answers = PickWeighted(askable, mode, wanted);
+        var answers = PickWeighted(askable, mode, SessionBudget.Cap(wanted, SessionBudget.Listening));
 
         var questions = answers
             .Select(answer => BuildQuestion(answer, mode, clips, audible, groups))
             .ToList();
 
         return new Quiz(mode, questions);
+    }
+
+    /// <summary>
+    /// How many sentences were met for the first time in this mode today. A sentence's first
+    /// answer in a mode is the oldest one it has there, so that answer's day is the day it was
+    /// introduced.
+    /// </summary>
+    private async Task<int> IntroducedTodayAsync(ListeningMode mode, CancellationToken ct)
+    {
+        var since = SessionBudget.TodayStartedAt;
+
+        return await db.ListeningAnswers
+            .Where(a => a.Mode == mode)
+            .GroupBy(a => a.TtsClipId)
+            .Select(g => g.Min(a => a.AnsweredAt))
+            .CountAsync(first => first >= since, ct);
     }
 
     /// <summary>
