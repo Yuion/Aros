@@ -531,10 +531,17 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         var clips = await AudibleClipsAsync(ct);
         var audible = await AudibleFormsAsync(clips, ct);
 
-        return
-        [
-            .. Asked.Select(mode => Tally(Eligible(clips, mode, audible), mode))
-        ];
+        var tallies = new List<Availability>();
+
+        foreach (var mode in Asked)
+        {
+            // What the ladder says, then what the day's intake actually allows — a page that
+            // promises sixty-nine and then refuses to start is lying about one of the two
+            var allowance = SessionBudget.RemainingIntake(await IntroducedTodayAsync(mode, ct));
+            tallies.Add(Tally(Eligible(clips, mode, audible), mode).WithIntake(allowance));
+        }
+
+        return tallies;
     }
 
     /// <summary>Sentences a mode could ask about at all, before rests and mastery are considered.</summary>

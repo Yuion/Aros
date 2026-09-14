@@ -238,13 +238,16 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
         var words = await TestableAsync(tag, ct);
         var unique = PromptCounts(words);
 
+        var allowance = SessionBudget.RemainingIntake(await IntroducedTodayAsync(ct));
+
         return
         [
             .. Enum.GetValues<VocabDirection>()
                 .Select(direction => Availability.From(
-                    direction.ToString(),
-                    words.Where(w => Directions(w, unique).Contains(direction))
-                         .Select(w => Standing(w, direction))))
+                        direction.ToString(),
+                        words.Where(w => Directions(w, unique).Contains(direction))
+                             .Select(w => Standing(w, direction)))
+                    .WithIntake(allowance))
         ];
     }
 

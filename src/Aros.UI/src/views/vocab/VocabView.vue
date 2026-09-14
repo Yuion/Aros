@@ -43,7 +43,10 @@
 
       <!-- Nothing to draw, and why -->
       <p v-if="!selected.ready && ready.length" class="notice resting">
-        <template v-if="selected.resting">
+        <template v-if="selected.held && !selected.resting">
+          Today's new words are done — {{ selected.held }} more start tomorrow.
+        </template>
+        <template v-else-if="selected.resting">
           {{ direction ? 'This direction is' : 'Every direction is' }} resting —
           {{ selected.resting }} waiting, next due {{ selected.nextDue }}.
           <template v-if="direction"> Pick another direction, or come back then.</template>
@@ -370,6 +373,7 @@ const selected = computed(() => {
     ready: rows.reduce((n, r) => n + r.ready, 0),
     resting: rows.reduce((n, r) => n + r.resting, 0),
     mastered: rows.reduce((n, r) => n + r.mastered, 0),
+    held: rows.reduce((n, r) => n + (r.held ?? 0), 0),
     nextDue: rows.find((r) => r.nextDueAt === due)?.nextDue ?? '',
   }
 })

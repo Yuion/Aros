@@ -19,7 +19,11 @@
           <span class="stat"><strong>{{ standing.mastered }}</strong> mastered</span>
         </div>
 
-        <p v-if="standing.restingOut" class="note resting">
+        <p v-if="standing.heldBack" class="note resting">
+          Today's new patterns are done — {{ standing.held }} more start tomorrow.
+        </p>
+
+        <p v-else-if="standing.restingOut" class="note resting">
           Every pattern is resting — the next is due {{ standing.nextDue }}.
         </p>
 
@@ -90,7 +94,7 @@ const ROUND_MODES = [
 
 const router = useRouter()
 const points = ref([])
-const standing = ref({ ready: 0, resting: 0, mastered: 0, perSession: 0 })
+const standing = ref({ ready: 0, resting: 0, mastered: 0, held: 0, heldBack: false, perSession: 0 })
 
 // Even "everything" stops at the session budget; what is left over keeps its place in the queue
 const roundLength = computed(() => {

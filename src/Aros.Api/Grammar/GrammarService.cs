@@ -273,9 +273,12 @@ public class GrammarService(AppDbContext db, IMemoryCache cache)
     {
         var (points, items, progress) = await PoolAsync(ct);
 
+        var allowance = SessionBudget.RemainingIntake(await IntroducedTodayAsync(ct));
+
         return Availability.From(
-            "Grammar",
-            points.Where(p => items.Any(i => i.GrammarPointId == p.Id)).Select(p => Standing(p, progress)));
+                "Grammar",
+                points.Where(p => items.Any(i => i.GrammarPointId == p.Id)).Select(p => Standing(p, progress)))
+            .WithIntake(allowance);
     }
 
     /// <summary>Every pattern with its record — the page behind the start button.</summary>
