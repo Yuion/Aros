@@ -27,6 +27,13 @@ public static class SessionBudget
     public const int Grammar = 15;
 
     /// <summary>
+    /// The mixed daily session: everything due, of every kind, in one game. Sixty questions is
+    /// about twenty-five minutes at the pace the answer log shows, and it replaces going through
+    /// the three trainers one at a time rather than adding to them.
+    /// </summary>
+    public const int Daily = 60;
+
+    /// <summary>
     /// How many items may be met for the first time in one day, per trainer.
     ///
     /// A new mode has no history, so every item in it is due at once — turning Ordering on put 75

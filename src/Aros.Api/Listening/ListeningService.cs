@@ -143,6 +143,69 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     }
 
     /// <summary>
+    /// A fixed number of questions in one mode, for the mixed daily round. See the note on
+    /// <see cref="Vocab.VocabService.BuildSliceAsync"/> — same idea, same reasons.
+    /// </summary>
+    public async Task<Quiz> BuildSliceAsync(
+        ListeningMode mode,
+        int count,
+        bool ignoreRests,
+        IReadOnlySet<int>? exclude,
+        CancellationToken ct)
+    {
+        if (count <= 0 || !Asked.Contains(mode)) return new Quiz(mode, []);
+
+        var clips = await AudibleClipsAsync(ct);
+        var groups = await db.HomophoneGroups.AsNoTracking().ToListAsync(ct);
+        var audible = mode == ListeningMode.Characters ? AudibleForms(clips, groups) : null;
+
+        var eligible = Eligible(clips, mode, audible!)
+            .Where(c => exclude is null || !exclude.Contains(c.Id))
+            .ToList();
+
+        var askable = ignoreRests ? Unmastered(eligible, mode) : Askable(eligible, mode);
+
+        if (!ignoreRests)
+            askable = SessionBudget.WithIntake(
+                askable,
+                clip => Stat(clip, mode) is null,
+                SessionBudget.RemainingIntake(await IntroducedTodayAsync(mode, ct)));
+
+        if (askable.Count == 0) return new Quiz(mode, []);
+
+        var picked = PickWeighted(
+            askable, mode, Math.Min(count, askable.Count), await RecentMissesAsync(mode, ct));
+
+        return new Quiz(mode, [.. picked.Select(clip => BuildQuestion(clip, mode, clips, audible, groups))]);
+    }
+
+    /// <summary>Everything still worth asking in a mode, rests set aside — mastery is not.</summary>
+    private static List<TtsClip> Unmastered(List<TtsClip> clips, ListeningMode mode) =>
+        clips.Where(c => c.RetiredAt is null
+                         && (Stat(c, mode) is not { } stat
+                             || !Schedule(stat).IsMastered(stat.ConsecutiveCorrect)))
+             .ToList();
+
+    /// <summary>
+    /// What a mode could ask, for a planner deciding how to spend the day. Ready counts what it
+    /// can ask *today*, intake limit included — otherwise a mode with seventy sentences it has
+    /// never met would be handed half the session and then serve six.
+    /// </summary>
+    public async Task<(int Ready, int Unmastered)> StandingAsync(ListeningMode mode, CancellationToken ct)
+    {
+        var clips = await AudibleClipsAsync(ct);
+        var audible = await AudibleFormsAsync(clips, ct);
+        var eligible = Eligible(clips, mode, audible);
+
+        var ready = SessionBudget.WithIntake(
+            Askable(eligible, mode),
+            clip => Stat(clip, mode) is null,
+            SessionBudget.RemainingIntake(await IntroducedTodayAsync(mode, ct)));
+
+        return (ready.Count, Unmastered(eligible, mode).Count);
+    }
+
+    /// <summary>
     /// The sentences just missed, again, right now. Rests are ignored on purpose: a sentence
     /// answered wrong a minute ago is resting only because it was answered at all, and the minute
     /// after a miss is when the right answer is worth most.

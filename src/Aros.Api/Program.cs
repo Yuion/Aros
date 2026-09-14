@@ -43,6 +43,7 @@ builder.Services.AddScoped<ListeningService>();
 builder.Services.AddScoped<VocabService>();
 builder.Services.AddScoped<Aros.Api.Grammar.GrammarService>();
 builder.Services.AddScoped<Aros.Api.Grammar.GrammarLibrary>();
+builder.Services.AddScoped<Aros.Api.Daily.DailyService>();
 builder.Services.AddScoped<VocabImporter>();
 builder.Services.AddScoped<CourseState>();
 builder.Services.AddScoped<AiBudget>();

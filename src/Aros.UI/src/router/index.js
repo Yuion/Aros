@@ -13,6 +13,18 @@ const routes = [
     meta: { nav: true, label: 'Tutor', icon: '🧑‍🏫' },
   },
   {
+    // The day's work in one game — everything due, mixed, weighted towards the weak spots
+    path: '/daily',
+    name: 'daily',
+    component: () => import('@/views/daily/DailyView.vue'),
+    meta: { nav: true, label: 'Daily Practice', icon: '🎯' },
+  },
+  {
+    path: '/daily/session',
+    name: 'daily-session',
+    component: () => import('@/views/daily/DailySessionView.vue'),
+  },
+  {
     path: '/vocab',
     name: 'vocab',
     component: () => import('@/views/vocab/VocabView.vue'),

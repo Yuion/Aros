@@ -138,6 +138,76 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
     }
 
     /// <summary>
+    /// A fixed number of questions in one direction, for a session that decides its own shares —
+    /// the mixed daily round, which weighs the directions against each other rather than giving
+    /// each the same block.
+    ///
+    /// <paramref name="ignoreRests"/> is for practice past the day's work: nothing mastered comes
+    /// back, but a word resting between rungs can be asked again. It changes nothing about scoring
+    /// — a right answer is a right answer whenever it is given.
+    /// </summary>
+    public async Task<VocabSession> BuildSliceAsync(
+        VocabDirection direction,
+        int count,
+        bool ignoreRests,
+        IReadOnlySet<int>? exclude,
+        CancellationToken ct)
+    {
+        if (count <= 0) return new VocabSession([]);
+
+        var words = await TestableAsync(null, ct);
+        var unique = PromptCounts(words);
+
+        var pool = words
+            .Where(w => Directions(w, unique).Contains(direction))
+            .Where(w => exclude is null || !exclude.Contains(w.Id))
+            .ToList();
+
+        var askable = ignoreRests ? Unmastered(pool, direction) : Askable(pool, direction);
+
+        if (!ignoreRests)
+            askable = SessionBudget.WithIntake(
+                askable,
+                word => Progress(word, direction) is null,
+                SessionBudget.RemainingIntake(await IntroducedTodayAsync(ct)));
+
+        if (askable.Count == 0) return new VocabSession([]);
+
+        var recent = await RecentMissesAsync(ct);
+
+        var picked = DrawWeight.PickWorstFirst(
+            askable, Math.Min(count, askable.Count), word => Weight(word, direction, recent));
+
+        return new VocabSession([.. picked.Select(word => BuildQuestion(word, direction, words))]);
+    }
+
+    /// <summary>Everything still worth asking in a direction, rests set aside — mastery is not.</summary>
+    private static List<VocabWord> Unmastered(List<VocabWord> words, VocabDirection direction) =>
+        words.Where(w => w.RetiredAt is null
+                         && (Progress(w, direction) is not { } p
+                             || !Ladder(p).IsMastered(p.ConsecutiveCorrect)))
+             .ToList();
+
+    /// <summary>
+    /// What a direction could ask, for a planner deciding how to spend the day. Ready is what it
+    /// can ask *today*: the intake limit is part of the answer, or the planner would hand a share
+    /// to a direction full of words it is not allowed to introduce yet.
+    /// </summary>
+    public async Task<(int Ready, int Unmastered)> StandingAsync(VocabDirection direction, CancellationToken ct)
+    {
+        var words = await TestableAsync(null, ct);
+        var unique = PromptCounts(words);
+        var pool = words.Where(w => Directions(w, unique).Contains(direction)).ToList();
+
+        var ready = SessionBudget.WithIntake(
+            Askable(pool, direction),
+            word => Progress(word, direction) is null,
+            SessionBudget.RemainingIntake(await IntroducedTodayAsync(ct)));
+
+        return (ready.Count, Unmastered(pool, direction).Count);
+    }
+
+    /// <summary>
     /// The ones just missed, again, right now. Rests are ignored on purpose: a word answered
     /// wrong a minute ago is resting only because it was answered at all, and the minute after a
     /// miss is when the right answer is worth most. Order is kept as given — the order they were

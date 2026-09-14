@@ -36,7 +36,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        // AROS_API points a dev server at a scratch API — testing against a clone of the database
+        // rather than the live one is the difference between a test and an accident
+        target: process.env.AROS_API ?? 'http://localhost:5000',
         changeOrigin: true,
       },
     },

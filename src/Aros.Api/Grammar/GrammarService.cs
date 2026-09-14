@@ -102,6 +102,91 @@ public class GrammarService(AppDbContext db, IMemoryCache cache)
     }
 
     /// <summary>
+    /// A fixed number of patterns, for the mixed daily round. See the note on
+    /// <see cref="Vocab.VocabService.BuildSliceAsync"/> — same idea, same reasons.
+    /// </summary>
+    public async Task<GrammarRound> BuildSliceAsync(
+        int count, bool ignoreRests, IReadOnlySet<int>? exclude, CancellationToken ct)
+    {
+        if (count <= 0) return new GrammarRound([]);
+
+        var (points, items, progress) = await PoolAsync(ct);
+
+        var pool = points
+            .Where(p => items.Any(i => i.GrammarPointId == p.Id))
+            .Where(p => exclude is null || !exclude.Contains(p.Id))
+            .ToList();
+
+        var askable = pool
+            .Where(p => ignoreRests
+                ? !Standing(p, progress).Schedule.IsMastered(Streak(p, progress))
+                : Standing(p, progress).Schedule.IsAvailable(
+                    Streak(p, progress), progress.GetValueOrDefault(p.Id)?.LastSeenAt))
+            .ToList();
+
+        if (!ignoreRests)
+            askable = SessionBudget.WithIntake(
+                askable,
+                point => !progress.ContainsKey(point.Id),
+                SessionBudget.RemainingIntake(await IntroducedTodayAsync(ct)));
+
+        if (askable.Count == 0) return new GrammarRound([]);
+
+        var recent = await RecentMissesAsync(ct);
+
+        var drawn = DrawWeight.PickWorstFirst(
+            askable, Math.Min(count, askable.Count), point => Weight(point, progress, recent));
+
+        var sentences = items.Select(i => i.Answer).Distinct().ToList();
+        var homophones = await HomophonesAsync(ct);
+
+        return new GrammarRound([.. drawn.Select(point => Ask(point, items, sentences, homophones))]);
+    }
+
+    /// <summary>The patterns just missed, asked again straight away, rests set aside.</summary>
+    public async Task<GrammarRound> BuildDrillAsync(IReadOnlyList<int> pointIds, CancellationToken ct)
+    {
+        if (pointIds.Count == 0) return new GrammarRound([]);
+
+        var (points, items, _) = await PoolAsync(ct);
+        var wanted = points.Where(p => pointIds.Contains(p.Id)).ToList();
+
+        if (wanted.Count == 0) return new GrammarRound([]);
+
+        var sentences = items.Select(i => i.Answer).Distinct().ToList();
+        var homophones = await HomophonesAsync(ct);
+
+        // In the order they were missed, once each
+        var asked = pointIds
+            .Select(id => wanted.FirstOrDefault(p => p.Id == id))
+            .Where(p => p is not null && items.Any(i => i.GrammarPointId == p!.Id))
+            .Select(p => Ask(p!, items, sentences, homophones))
+            .ToList();
+
+        return new GrammarRound(asked);
+    }
+
+    /// <summary>What the trainer could still ask, for a planner deciding how to spend the day.</summary>
+    public async Task<(int Ready, int Unmastered)> StandingAsync(CancellationToken ct)
+    {
+        var (points, items, progress) = await PoolAsync(ct);
+        var pool = points.Where(p => items.Any(i => i.GrammarPointId == p.Id)).ToList();
+
+        var askable = pool.Where(p => Standing(p, progress).Schedule.IsAvailable(
+            Streak(p, progress), progress.GetValueOrDefault(p.Id)?.LastSeenAt)).ToList();
+
+        // What it can ask today, intake limit included
+        var ready = SessionBudget.WithIntake(
+            askable,
+            point => !progress.ContainsKey(point.Id),
+            SessionBudget.RemainingIntake(await IntroducedTodayAsync(ct))).Count;
+
+        var unmastered = pool.Count(p => !Standing(p, progress).Schedule.IsMastered(Streak(p, progress)));
+
+        return (ready, unmastered);
+    }
+
+    /// <summary>
     /// One question for one pattern: the sentence least recently asked of the ones that exercise
     /// it, so a pattern with six drills cycles through all six rather than leaning on one.
     /// </summary>
