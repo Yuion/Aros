@@ -75,8 +75,10 @@ public class GrammarService(AppDbContext db, IMemoryCache cache)
         var wanted = SessionBudget.Cap(
             sweep ? askable.Count : Math.Clamp(count, 1, askable.Count), SessionBudget.Grammar);
 
+        var recent = await RecentMissesAsync(ct);
+
         var drawn = DrawWeight.PickWorstFirst(
-            askable, wanted, point => Weight(point, progress));
+            askable, wanted, point => Weight(point, progress, recent));
 
         var sentences = items.Select(i => i.Answer).Distinct().ToList();
         var homophones = await HomophonesAsync(ct);
@@ -239,10 +241,24 @@ public class GrammarService(AppDbContext db, IMemoryCache cache)
     private static int Streak(GrammarPoint point, Dictionary<int, GrammarProgress> progress) =>
         progress.GetValueOrDefault(point.Id)?.ConsecutiveCorrect ?? 0;
 
-    private static double Weight(GrammarPoint point, Dictionary<int, GrammarProgress> progress) =>
+    private static double Weight(
+        GrammarPoint point, Dictionary<int, GrammarProgress> progress, MissTally misses) =>
         progress.GetValueOrDefault(point.Id) is { } mine
-            ? DrawWeight.For(Ladder(mine), mine.WrongCount, mine.ConsecutiveCorrect, mine.LastSeenAt)
+            ? DrawWeight.For(Ladder(mine), misses.For(point.Id), mine.ConsecutiveCorrect, mine.LastSeenAt)
             : DrawWeight.Unseen;
+
+    /// <summary>What has been going wrong lately, one decayed score per pattern.</summary>
+    private async Task<MissTally> RecentMissesAsync(CancellationToken ct)
+    {
+        var since = MissTally.Since;
+
+        var misses = await db.GrammarAnswers
+            .Where(a => !a.Correct && a.AnsweredAt >= since)
+            .Select(a => new { a.GrammarPointId, a.AnsweredAt })
+            .ToListAsync(ct);
+
+        return MissTally.From(misses.Select(m => (m.GrammarPointId, 0, m.AnsweredAt)));
+    }
 
     private static string NothingToAsk(
         List<GrammarPoint> points, List<GrammarItem> items, Dictionary<int, GrammarProgress> progress)

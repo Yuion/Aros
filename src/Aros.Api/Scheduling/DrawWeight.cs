@@ -24,6 +24,10 @@ public static class DrawWeight
     /// missed four times was five times likelier than a clean one, which in a round of fifteen
     /// drawn from seventy still meant it might not come up at all. Raised to this power, four
     /// misses count for eleven and the trouble sits at the top of the pile.
+    ///
+    /// The misses counted are recent ones (<see cref="MissTally"/>), not lifetime ones: an item
+    /// that went badly in its first week and has been right since should not still be near the
+    /// top of every round because of that week.
     /// </summary>
     public const double MissExponent = 1.5;
 
@@ -35,9 +39,9 @@ public static class DrawWeight
     /// </summary>
     public const double WorstShare = 0.5;
 
-    public static double For(RestSchedule schedule, int wrongCount, int consecutiveCorrect, DateTime? lastSeenAt)
+    public static double For(RestSchedule schedule, double misses, int consecutiveCorrect, DateTime? lastSeenAt)
     {
-        var weight = Math.Pow(1 + wrongCount, MissExponent)
+        var weight = Math.Pow(1 + misses, MissExponent)
                      * Math.Pow(0.5, EffectiveStreak(schedule, consecutiveCorrect, lastSeenAt));
 
         return Math.Max(Floor, weight);

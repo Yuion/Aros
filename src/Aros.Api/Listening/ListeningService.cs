@@ -116,7 +116,8 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
                 $"Today's {SessionBudget.NewPerDay} new sentences are done. The rest are waiting for tomorrow.");
 
         var wanted = sweep ? askable.Count : Math.Clamp(questionCount, 1, askable.Count);
-        var answers = PickWeighted(askable, mode, SessionBudget.Cap(wanted, SessionBudget.Listening));
+        var answers = PickWeighted(
+            askable, mode, SessionBudget.Cap(wanted, SessionBudget.Listening), await RecentMissesAsync(mode, ct));
 
         var questions = answers
             .Select(answer => BuildQuestion(answer, mode, clips, audible, groups))
@@ -503,13 +504,28 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     internal static TtsClipStat? Stat(TtsClip clip, ListeningMode mode) =>
         clip.Stats.FirstOrDefault(s => s.Mode == mode);
 
-    private static List<TtsClip> PickWeighted(List<TtsClip> clips, ListeningMode mode, int count) =>
-        DrawWeight.PickWorstFirst(clips, count, clip => Weight(clip, mode));
+    private static List<TtsClip> PickWeighted(
+        List<TtsClip> clips, ListeningMode mode, int count, MissTally misses) =>
+        DrawWeight.PickWorstFirst(clips, count, clip => Weight(clip, mode, misses));
 
-    private static double Weight(TtsClip clip, ListeningMode mode) =>
+    private static double Weight(TtsClip clip, ListeningMode mode, MissTally misses) =>
         Stat(clip, mode) is { } stat
-            ? DrawWeight.For(Schedule(stat), stat.WrongCount, stat.ConsecutiveCorrect, stat.LastSeenAt)
+            ? DrawWeight.For(
+                Schedule(stat), misses.For(clip.Id, (int)mode), stat.ConsecutiveCorrect, stat.LastSeenAt)
             : DrawWeight.Unseen;
+
+    /// <summary>What has been going wrong lately in this mode, one decayed score per sentence.</summary>
+    private async Task<MissTally> RecentMissesAsync(ListeningMode mode, CancellationToken ct)
+    {
+        var since = MissTally.Since;
+
+        var misses = await db.ListeningAnswers
+            .Where(a => !a.Correct && a.Mode == mode && a.AnsweredAt >= since)
+            .Select(a => new { a.TtsClipId, a.AnsweredAt })
+            .ToListAsync(ct);
+
+        return MissTally.From(misses.Select(m => (m.TtsClipId, (int)mode, m.AnsweredAt)));
+    }
 
     private QuestionState Lookup(Guid token) =>
         cache.TryGetValue(CacheKey(token), out QuestionState? state) && state is not null

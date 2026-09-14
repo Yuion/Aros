@@ -79,6 +79,7 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
                 direction => words.Where(w => Directions(w, unique).Contains(direction)).ToList());
 
         var intake = SessionBudget.RemainingIntake(await IntroducedTodayAsync(ct));
+        var recent = await RecentMissesAsync(ct);
 
         var candidates = testable.ToDictionary(
             pair => pair.Key,
@@ -121,7 +122,7 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
             if (pool.Count == 0) continue;
 
             var picked = DrawWeight.PickWorstFirst(
-                pool, Math.Min(perBlock, pool.Count), word => Weight(word, direction));
+                pool, Math.Min(perBlock, pool.Count), word => Weight(word, direction, recent));
 
             blocks.Add(picked.Select(word => BuildQuestion(word, direction, words)).ToList());
         }
@@ -478,10 +479,27 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
     internal static VocabProgress? Progress(VocabWord word, VocabDirection direction) =>
         word.Progress.FirstOrDefault(p => p.Direction == direction);
 
-    private static double Weight(VocabWord word, VocabDirection direction) =>
+    private static double Weight(VocabWord word, VocabDirection direction, MissTally misses) =>
         Progress(word, direction) is { } progress
-            ? DrawWeight.For(Ladder(progress), progress.WrongCount, progress.ConsecutiveCorrect, progress.LastSeenAt)
+            ? DrawWeight.For(
+                Ladder(progress),
+                misses.For(word.Id, (int)direction),
+                progress.ConsecutiveCorrect,
+                progress.LastSeenAt)
             : DrawWeight.Unseen;
+
+    /// <summary>What has been going wrong lately, one decayed score per word and direction.</summary>
+    private async Task<MissTally> RecentMissesAsync(CancellationToken ct)
+    {
+        var since = MissTally.Since;
+
+        var misses = await db.VocabAnswers
+            .Where(a => !a.Correct && a.AnsweredAt >= since)
+            .Select(a => new { a.VocabWordId, a.Direction, a.AnsweredAt })
+            .ToListAsync(ct);
+
+        return MissTally.From(misses.Select(m => (m.VocabWordId, (int)m.Direction, m.AnsweredAt)));
+    }
 
     private QuestionState Lookup(Guid token) =>
         cache.TryGetValue(CacheKey(token), out QuestionState? state) && state is not null
