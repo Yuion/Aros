@@ -18,20 +18,41 @@ public static class SentenceTiles
     /// <summary>Wrong tiles beyond the sentence's own.</summary>
     private const int Extras = 4;
 
+    /// <summary>
+    /// Tiles for a sentence you have only heard.
+    ///
+    /// No sound-alike of a character in the sentence is ever offered. 他 and 她 are one sound, so
+    /// with both on the table the question has two answers that are equally right to the ear and
+    /// one of them is marked wrong — which tests nothing but luck. Where the prompt is written
+    /// rather than spoken the opposite holds, and the sound-alike is the sharpest distractor
+    /// there is; see the overload below.
+    /// </summary>
     public static List<string> Build(TtsClip clip, IReadOnlyList<TtsClip> pool, Dictionary<string, string> homophones) =>
-        Build(clip.Sentence, [.. pool.Where(c => c.Id != clip.Id).Select(c => c.Sentence)], homophones);
+        Build(
+            clip.Sentence,
+            [.. pool.Where(c => c.Id != clip.Id).Select(c => c.Sentence)],
+            homophones,
+            heard: true);
 
     /// <summary>
     /// The same thing for a sentence with no clip behind it — a grammar drill answer, say. The
     /// pool is whatever other sentences are worth stealing characters from.
+    ///
+    /// <paramref name="heard"/> says the sentence was spoken rather than written. Only then are
+    /// sound-alikes held back: a drill that shows "She does not like reading" has already said
+    /// which of 他 and 她 it wants, so offering the other is a fair trap rather than an unfair one.
     /// </summary>
-    public static List<string> Build(string sentence, IReadOnlyList<string> pool, Dictionary<string, string> homophones)
+    public static List<string> Build(
+        string sentence,
+        IReadOnlyList<string> pool,
+        Dictionary<string, string> homophones,
+        bool heard = false)
     {
         var answer = Characters(sentence);
         var tiles = new List<string>(answer);
         var seen = new HashSet<string>(answer);
 
-        foreach (var character in Distractors(sentence, pool, homophones))
+        foreach (var character in Distractors(sentence, pool, homophones, heard))
         {
             if (tiles.Count >= answer.Count + Extras) break;
 
@@ -48,19 +69,27 @@ public static class SentenceTiles
     /// sentence, then characters from the sentences nearest this one. A homophone is the sharpest
     /// of these — it is the mistake the ear actually makes, and the whole reason the sound-alike
     /// groups exist.
+    ///
+    /// Unless the sentence was heard rather than read. Then a sound-alike is not a sharp
+    /// distractor but an unanswerable question, and it is barred — both as a first-choice
+    /// distractor and, further down, as a character borrowed from a neighbouring sentence, which
+    /// is where 她 would otherwise arrive anyway: the nearest sentence to 他不喜欢看书。is usually
+    /// 她不喜欢看书。
     /// </summary>
     private static IEnumerable<string> Distractors(
-        string sentence, IReadOnlyList<string> pool, Dictionary<string, string> homophones)
+        string sentence, IReadOnlyList<string> pool, Dictionary<string, string> homophones, bool heard)
     {
         var answer = Characters(sentence);
+        var barred = heard ? SoundAlikes(answer, homophones) : [];
 
-        foreach (var character in answer.OrderBy(_ => Random.Shared.Next()))
-        {
-            if (!homophones.TryGetValue(character, out var group)) continue;
+        if (!heard)
+            foreach (var character in answer.OrderBy(_ => Random.Shared.Next()))
+            {
+                if (!homophones.TryGetValue(character, out var group)) continue;
 
-            foreach (var alternative in Characters(group).Where(a => a != character))
-                yield return alternative;
-        }
+                foreach (var alternative in Characters(group).Where(a => a != character))
+                    yield return alternative;
+            }
 
         var nearest = pool
             .Where(other => other != sentence)
@@ -69,7 +98,25 @@ public static class SentenceTiles
 
         foreach (var other in nearest)
             foreach (var character in Characters(other))
-                yield return character;
+                if (!barred.Contains(character))
+                    yield return character;
+    }
+
+    /// <summary>Every character that sounds like one of these — the ones the ear cannot rule out.</summary>
+    private static HashSet<string> SoundAlikes(
+        IReadOnlyList<string> characters, Dictionary<string, string> homophones)
+    {
+        var alike = new HashSet<string>();
+
+        foreach (var character in characters)
+        {
+            if (!homophones.TryGetValue(character, out var group)) continue;
+
+            foreach (var member in Characters(group))
+                alike.Add(member);
+        }
+
+        return alike;
     }
 
     /// <summary>The audible characters: Han only, so punctuation never becomes a tile.</summary>
