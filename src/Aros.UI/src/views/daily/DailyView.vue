@@ -114,112 +114,123 @@ onMounted(async () => {
 
 <style scoped>
 .page {
-  max-width: 44rem;
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
 h1 {
-  font-size: 1.4rem;
-  margin: 0 0 1rem;
+  font-size: 1.15rem;
+  font-weight: 700;
 }
 
 h2 {
-  font-size: 0.95rem;
-  margin: 0 0 0.3rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9ca3af;
 }
 
 .status {
   color: #6b7280;
+  font-size: 0.9rem;
 }
 
 .status.error {
   color: #b91c1c;
 }
 
+/* What the day costs, before it is started */
 .headline {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 1rem 1.1rem;
-  border-radius: 12px;
-  background: #eef2ff;
-  margin-bottom: 0.9rem;
-}
-
-.headline.clear {
-  background: #ecfdf5;
+  gap: 1.1rem;
+  padding: 1.1rem 1.2rem;
+  border-radius: 14px;
+  background: white;
+  border: 1px solid #ece9f8;
+  box-shadow: 0 1px 2px rgba(26, 26, 26, 0.04);
 }
 
 .count {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 5rem;
+  min-width: 4.5rem;
+  gap: 0.1rem;
 }
 
 .count strong {
-  font-size: 2.1rem;
+  font-size: 2.4rem;
+  font-weight: 700;
   line-height: 1;
-  color: #3730a3;
+  color: #6d5bd0;
 }
 
 .headline.clear .count strong {
-  color: #047857;
+  color: #15803d;
 }
 
 .count span {
-  font-size: 0.7rem;
-  color: #6b7280;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9ca3af;
   text-align: center;
 }
 
 .sub {
-  margin: 0;
   font-size: 0.85rem;
-  color: #374151;
+  line-height: 1.5;
+  color: #4b5563;
 }
 
 .actions {
   display: flex;
   gap: 0.6rem;
   flex-wrap: wrap;
-  margin-bottom: 0.4rem;
 }
 
 .big {
-  padding: 0.7rem 1.1rem;
+  padding: 0.7rem 1.3rem;
   font-size: 0.95rem;
 }
 
 .locked-note {
-  margin: 0 0 1rem;
   font-size: 0.75rem;
   color: #9ca3af;
+  margin-top: -0.6rem;
 }
 
 .card {
-  background: #fff;
-  border-radius: 12px;
-  padding: 0.9rem 1rem;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  background: white;
+  border-radius: 14px;
+  border: 1px solid #ece9f8;
+  padding: 1rem 1.1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .hint {
-  margin: 0 0 0.8rem;
   font-size: 0.78rem;
+  line-height: 1.5;
   color: #6b7280;
 }
 
 .tracks {
   list-style: none;
-  margin: 0;
-  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.8rem;
+  margin-top: 0.2rem;
 }
 
 .tracks li.idle {
-  opacity: 0.45;
+  opacity: 0.4;
 }
 
 .t-head {
@@ -237,25 +248,26 @@ h2 {
 .t-count {
   font-variant-numeric: tabular-nums;
   font-weight: 700;
-  color: #3730a3;
+  color: #6d5bd0;
 }
 
 .bar {
-  height: 7px;
-  border-radius: 4px;
-  background: #f1f3f6;
+  height: 6px;
+  border-radius: 999px;
+  background: #f3f2fa;
   overflow: hidden;
-  margin: 0.25rem 0;
+  margin: 0.3rem 0 0.25rem;
 }
 
 .fill {
   height: 100%;
-  border-radius: 4px;
-  background: #6366f1;
+  border-radius: 999px;
+  background: #6d5bd0;
 }
 
+/* Green where it is solid, amber where it slips, red where it is going badly */
 .fill.good {
-  background: #10b981;
+  background: #22c55e;
 }
 
 .fill.fair {
@@ -267,14 +279,69 @@ h2 {
 }
 
 .fill.unknown {
-  background: #94a3b8;
+  background: #b8bcc4;
 }
 
 .t-foot {
   display: flex;
-  gap: 0.8rem;
-  font-size: 0.72rem;
-  color: #6b7280;
+  gap: 0.75rem;
   flex-wrap: wrap;
+  font-size: 0.72rem;
+  color: #9ca3af;
+}
+
+.primary {
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.55rem 1.1rem;
+  border: none;
+  border-radius: 8px;
+  background: #6d5bd0;
+  color: white;
+  cursor: pointer;
+}
+
+.primary:disabled {
+  background: #d8d5ea;
+  cursor: default;
+}
+
+.secondary {
+  font: inherit;
+  font-size: 0.9rem;
+  color: #6b7280;
+  text-decoration: none;
+  padding: 0.6rem 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+}
+
+.secondary:hover:not(:disabled) {
+  border-color: #6d5bd0;
+  color: #6d5bd0;
+}
+
+.secondary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ghost {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  color: #4b5563;
+  cursor: pointer;
+}
+
+.ghost:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 </style>

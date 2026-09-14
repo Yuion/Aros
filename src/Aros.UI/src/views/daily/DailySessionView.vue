@@ -19,7 +19,11 @@
           <li v-for="(miss, i) in missed" :key="i">
             <span class="m-track">{{ short(miss.label) }}</span>
             <span class="m-prompt" :lang="miss.chinese ? 'zh' : undefined">{{ miss.prompt }}</span>
-            <span class="m-answer" lang="zh">{{ miss.expected }}</span>
+            <span
+              v-if="miss.expected !== miss.prompt"
+              class="m-answer"
+              :lang="han(miss.expected) ? 'zh' : undefined"
+            >{{ miss.expected }}</span>
           </li>
         </ul>
       </div>
@@ -112,6 +116,11 @@
           <button v-if="!answer" class="ghost" :disabled="!built.length" @click="clearBuilt">Clear</button>
           <button v-if="!answer" class="primary" :disabled="!built.length" @click="submitBuilt">Check</button>
         </div>
+
+        <p v-if="!answer" class="keys-hint">
+          Keys <strong>1–{{ Math.min(9, current.tiles?.length ?? 0) }}</strong> place ·
+          <strong>Backspace</strong> takes back · <strong>Enter</strong> checks
+        </p>
       </div>
 
       <!-- 他 and 她 are one sound, so a translation is a coin flip without this -->
@@ -155,7 +164,7 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import { api } from '@/services/api'
 import { clip, prefetch, release } from '@/services/audio'
 
@@ -173,7 +182,6 @@ const COOLDOWN = 30
 const REFILL_AT = 4
 
 const route = useRoute()
-const router = useRouter()
 
 const endless = route.query.mode === 'endless'
 
@@ -242,6 +250,11 @@ const verdict = computed(() => {
 
 function short(label) {
   return (label ?? '').split('·')[0].trim()
+}
+
+/** Chinese needs the language tag for its font; pinyin and English must not get it. */
+function han(text) {
+  return /[一-鿿]/.test(text ?? '')
 }
 
 // ----------------------------------------------------------------- the tiles
@@ -321,9 +334,11 @@ function remember(result) {
       mode: card.mode,
       direction: card.direction,
       label: card.label,
+      // The question as it was put — a listening card has no prompt, so the sentence stands in
       prompt: card.prompt ?? result.correctSentence ?? card.pattern,
-      chinese: card.promptLabel === 'Characters',
-      expected: result.characters || result.correctSentence || result.expected,
+      chinese: card.promptLabel === 'Characters' || (!card.prompt && !!result.correctSentence),
+      // ...and the answer it wanted, which for a listening card is the reading or the translation
+      expected: result.expected || result.characters || result.correctSentence,
     },
   ]
 }
@@ -541,12 +556,15 @@ onUnmounted(() => {
 
 <style scoped>
 .session {
-  max-width: 34rem;
+  max-width: 560px;
   margin: 0 auto;
+  padding-top: 1rem;
 }
 
 .status {
+  text-align: center;
   color: #6b7280;
+  font-size: 0.9rem;
 }
 
 .status.error {
@@ -554,299 +572,443 @@ onUnmounted(() => {
 }
 
 .status.inline {
+  margin-top: 0.8rem;
   font-size: 0.8rem;
-  margin-top: 0.6rem;
 }
 
 .round,
 .scorecard {
-  background: #fff;
-  border-radius: 14px;
-  padding: 1.1rem 1.2rem 1.3rem;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-items: center;
 }
 
 .progress {
   display: flex;
   justify-content: space-between;
-  font-size: 0.75rem;
-  color: #6b7280;
+  width: 100%;
+  font-size: 0.78rem;
+  color: #9ca3af;
+}
+
+.tally {
+  color: #6d5bd0;
+  font-weight: 600;
 }
 
 .bar {
-  height: 4px;
-  border-radius: 3px;
-  background: #f1f3f6;
+  width: 100%;
+  height: 3px;
+  border-radius: 999px;
+  background: #f3f2fa;
   overflow: hidden;
-  margin: 0.4rem 0 0.9rem;
+  margin-top: -0.6rem;
 }
 
 .fill {
   height: 100%;
-  background: #6366f1;
+  background: #6d5bd0;
   transition: width 0.2s ease;
 }
 
+/* Which kind of question this is — the one thing a mixed session must always say */
 .track-label {
-  margin: 0 0 0.7rem;
   font-size: 0.72rem;
-  letter-spacing: 0.04em;
+  font-weight: 700;
   text-transform: uppercase;
-  color: #6b7280;
+  letter-spacing: 0.06em;
+  color: #9ca3af;
+  text-align: center;
 }
 
 .listen-row {
   display: flex;
-  gap: 0.5rem;
   align-items: center;
-  margin-bottom: 0.9rem;
+  justify-content: center;
+  gap: 0.6rem;
 }
 
-.listen,
-.slow {
+.listen {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
   border: none;
-  border-radius: 10px;
+  background: #6d5bd0;
+  color: white;
+  font-size: 2rem;
   cursor: pointer;
-  background: #eef2ff;
-  color: #3730a3;
-  font-size: 1.1rem;
-  padding: 0.55rem 0.9rem;
+  box-shadow: 0 6px 18px rgba(109, 91, 208, 0.28);
+  transition: transform 0.15s;
+}
+
+.listen:hover {
+  transform: translateY(-2px);
 }
 
 .slow {
+  font: inherit;
   font-size: 0.8rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: white;
+  color: #4b5563;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .pattern {
-  margin: 0 0 0.2rem;
-  font-size: 0.8rem;
-  color: #3730a3;
+  font-size: 0.78rem;
   font-weight: 600;
+  color: #6d5bd0;
+  text-align: center;
 }
 
 .prompt {
-  margin: 0 0 0.9rem;
-  font-size: 1.35rem;
+  font-size: 1.25rem;
   font-weight: 600;
+  text-align: center;
+  line-height: 1.4;
 }
 
 .prompt[lang='zh'] {
-  font-size: 2rem;
+  font-size: 2.2rem;
+  letter-spacing: 0.05em;
 }
 
 .typed {
   display: flex;
   gap: 0.5rem;
+  width: 100%;
 }
 
 .typed input {
   flex: 1;
-  padding: 0.6rem 0.7rem;
-  border: 1px solid #d5d8de;
-  border-radius: 9px;
   font: inherit;
   font-size: 1rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+}
+
+.typed input:focus {
+  outline: none;
+  border-color: #6d5bd0;
+}
+
+.tiles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  width: 100%;
 }
 
 .built {
-  min-height: 3rem;
-  border: 1px dashed #d5d8de;
-  border-radius: 10px;
-  padding: 0.4rem;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3rem;
+  gap: 0.35rem;
+  min-height: 3.4rem;
+  padding: 0.5rem;
+  border: 1px dashed #d8d5ea;
+  border-radius: 10px;
+  background: #fbfaff;
   align-items: center;
-  margin-bottom: 0.7rem;
+}
+
+.built.empty {
+  justify-content: center;
 }
 
 .built-hint {
+  font-size: 0.78rem;
   color: #9ca3af;
-  font-size: 0.8rem;
-  padding: 0 0.3rem;
 }
 
 .built-tile {
-  font-size: 1.5rem;
-  padding: 0.25rem 0.55rem;
+  font: inherit;
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid #6d5bd0;
   border-radius: 8px;
-  border: 1px solid #c7d2fe;
-  background: #eef2ff;
+  background: white;
   cursor: pointer;
 }
 
 .bank {
   list-style: none;
-  margin: 0 0 0.7rem;
-  padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.45rem;
+  justify-content: center;
 }
 
 .tile {
   position: relative;
+  font: inherit;
   font-size: 1.5rem;
-  padding: 0.35rem 0.7rem;
-  border-radius: 9px;
-  border: 1px solid #d5d8de;
-  background: #fff;
+  line-height: 1;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: white;
   cursor: pointer;
+  transition: border-color 0.12s, transform 0.12s;
 }
 
+.tile:hover:not(:disabled) {
+  border-color: #6d5bd0;
+  transform: translateY(-1px);
+}
+
+/* Spent tiles hold their place: a gap that moves is a hint about what you took */
 .tile.used {
-  opacity: 0.3;
+  opacity: 0.25;
   cursor: default;
 }
 
 .key {
   position: absolute;
-  top: 1px;
-  right: 3px;
+  top: 0.08rem;
+  right: 0.2rem;
   font-size: 0.55rem;
-  color: #9ca3af;
+  font-weight: 600;
+  color: #b8bcc4;
+  line-height: 1;
 }
 
 .tile-actions {
   display: flex;
   gap: 0.5rem;
+  justify-content: center;
 }
 
 .hints {
   list-style: none;
-  margin: 0.8rem 0 0;
-  padding: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+  justify-content: center;
   font-size: 0.75rem;
   color: #6b7280;
 }
 
+.hints li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  background: white;
+}
+
 .hint-char {
   font-size: 1rem;
-  margin-right: 0.2rem;
 }
 
 .retry {
-  margin: 0.7rem 0 0;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
+  font-weight: 600;
   color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  padding: 0.45rem 0.7rem;
+  text-align: center;
 }
 
 .feedback {
-  margin-top: 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  align-items: flex-start;
+  align-items: center;
+  gap: 0.45rem;
 }
 
 .right {
-  color: #047857;
+  color: #15803d;
   font-weight: 600;
-  margin: 0;
 }
 
 .wrong {
   color: #b91c1c;
   font-weight: 600;
-  margin: 0;
 }
 
 .note {
-  margin: 0;
-  font-size: 0.85rem;
-  color: #6b7280;
+  font-size: 0.8rem;
+  color: #92400e;
 }
 
 .expected {
-  margin: 0;
-  font-size: 1.1rem;
   display: flex;
   gap: 0.5rem;
   align-items: baseline;
   flex-wrap: wrap;
+  justify-content: center;
+  font-size: 1.2rem;
 }
 
 .expected-text {
-  font-size: 0.9rem;
-  color: #374151;
+  font-size: 0.95rem;
+  color: #4b5563;
 }
 
 .stop-row {
-  margin: 1rem 0 0;
+  margin-top: 0.2rem;
 }
 
 .score-label {
-  margin: 0;
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
+  font-size: 0.78rem;
   text-transform: uppercase;
-  color: #6b7280;
-}
-
-.score {
-  margin: 0.2rem 0 0;
-  font-size: 2.6rem;
-  font-weight: 700;
-  color: #3730a3;
-}
-
-.score-total {
-  font-size: 1.2rem;
+  letter-spacing: 0.06em;
   color: #9ca3af;
 }
 
+.score {
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #6d5bd0;
+}
+
+.score-total {
+  font-size: 1.4rem;
+  color: #b8bcc4;
+}
+
 .score-note {
-  margin: 0.2rem 0 1rem;
-  color: #374151;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
+  color: #6b7280;
+  text-align: center;
+}
+
+.review {
+  width: 100%;
 }
 
 .review h2 {
-  font-size: 0.85rem;
-  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9ca3af;
+  margin-bottom: 0.5rem;
+  text-align: center;
 }
 
 .missed {
   list-style: none;
-  margin: 0 0 1rem;
-  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.35rem;
+  max-height: 16rem;
+  overflow-y: auto;
 }
 
 .missed li {
-  display: flex;
+  display: grid;
+  grid-template-columns: 5.5rem 1fr auto;
   gap: 0.5rem;
   align-items: baseline;
-  flex-wrap: wrap;
   font-size: 0.85rem;
-  border-bottom: 1px solid #f1f3f6;
-  padding-bottom: 0.35rem;
+  padding: 0.4rem 0.6rem;
+  background: white;
+  border: 1px solid #f0eefa;
+  border-radius: 8px;
 }
 
 .m-track {
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #9ca3af;
-  min-width: 5rem;
+  letter-spacing: 0.05em;
+  color: #b8bcc4;
 }
 
 .m-prompt {
-  color: #374151;
+  color: #4b5563;
+  overflow-wrap: anywhere;
 }
 
 .m-answer {
   font-weight: 600;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.keys-hint {
+  font-size: 0.72rem;
+  color: #b8bcc4;
+  text-align: center;
 }
 
 .actions {
   display: flex;
   gap: 0.6rem;
   flex-wrap: wrap;
+  justify-content: center;
+}
+
+@media (max-width: 480px) {
+  .missed li {
+    grid-template-columns: 1fr;
+    gap: 0.15rem;
+  }
+}
+
+.primary {
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.55rem 1.1rem;
+  border: none;
+  border-radius: 8px;
+  background: #6d5bd0;
+  color: white;
+  cursor: pointer;
+}
+
+.primary:disabled {
+  background: #d8d5ea;
+  cursor: default;
+}
+
+.secondary {
+  font: inherit;
+  font-size: 0.9rem;
+  color: #6b7280;
+  text-decoration: none;
+  padding: 0.6rem 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+}
+
+.secondary:hover:not(:disabled) {
+  border-color: #6d5bd0;
+  color: #6d5bd0;
+}
+
+.secondary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ghost {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  color: #4b5563;
+  cursor: pointer;
+}
+
+.ghost:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 </style>
