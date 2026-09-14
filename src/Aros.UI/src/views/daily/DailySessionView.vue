@@ -343,13 +343,20 @@ function remember(result) {
   ]
 }
 
-/** "I was right after all" — only for a translation the matcher rejected. */
+/**
+ * "I was right after all" — only for a translation the matcher rejected.
+ *
+ * Overruling makes the answer correct, which hides the Next button along with every other wrong
+ * answer's, so it has to start the advance itself: otherwise the card sits there with no way on.
+ */
 async function override() {
   try {
     const result = await api.post('/listening/override', { token: current.value.token })
     answer.value = { ...answer.value, ...result, correct: true }
     correctCount.value++
     missed.value = missed.value.slice(0, -1)
+
+    advance = setTimeout(next, CORRECT_PAUSE)
   } catch (e) {
     error.value = e.message
   }
