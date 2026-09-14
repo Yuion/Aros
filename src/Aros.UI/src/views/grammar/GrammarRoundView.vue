@@ -24,7 +24,7 @@
       </div>
 
       <div class="actions">
-        <button class="primary" @click="load">Again</button>
+        <button class="primary" @click="load()">Again</button>
         <RouterLink to="/grammar" class="secondary">Done</RouterLink>
       </div>
     </section>

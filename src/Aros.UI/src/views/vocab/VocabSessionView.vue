@@ -28,7 +28,7 @@
         <button v-if="missed.length" class="primary" @click="drill">
           Drill {{ missed.length === 1 ? 'it' : missed.length + ' of these' }}
         </button>
-        <button class="secondary" @click="load">Again</button>
+        <button class="secondary" @click="load()">Again</button>
         <RouterLink to="/vocab" class="secondary">Done</RouterLink>
       </div>
     </section>
@@ -195,7 +195,9 @@ async function load(build = null) {
   if (route.query.sweep === 'false') params.set('sweep', 'false')
 
   try {
-    const session = await (build ? build() : api.post(`/vocab/session?${params}`))
+    // Only a builder counts: bound straight to a click, the argument is a MouseEvent
+    const source = typeof build === 'function' ? build : null
+    const session = await (source ? source() : api.post(`/vocab/session?${params}`))
     questions.value = session.questions
     await focusField()
   } catch (e) {
