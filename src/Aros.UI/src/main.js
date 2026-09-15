@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import { registerSyncOnReconnect } from './services/sync'
+import { watchForUpdates } from './services/updates'
 
 // The service worker used to cache every /api response for a day. That rule is gone, but a
 // worker does not delete a runtime cache it has merely stopped declaring — so the stale copy
@@ -17,3 +18,4 @@ app.use(router)
 app.mount('#app')
 
 registerSyncOnReconnect()
+watchForUpdates()

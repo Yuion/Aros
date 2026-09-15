@@ -7,6 +7,12 @@
         <button class="menu-btn" @click="sidebarOpen = true">☰</button>
         <span class="status-dot" :class="{ offline: !isOnline }" :title="isOnline ? 'Online' : 'Offline'">●</span>
         <span class="status-text">{{ isOnline ? 'Online' : 'Offline' }}</span>
+
+        <!-- A deployed build the open page has not picked up yet. Reloading is your call: it
+             would throw away a round in progress. -->
+        <button v-if="updateReady" class="update" @click="reloadForUpdate">
+          Update ready — reload
+        </button>
       </header>
 
       <main class="content">
@@ -21,6 +27,7 @@ import { ref } from 'vue'
 import { RouterView } from 'vue-router'
 import AppSidebar from '@/components/AppSidebar.vue'
 import { useOnlineStatus } from '@/composables/useOnlineStatus'
+import { reloadForUpdate, updateReady } from '@/services/updates'
 
 const sidebarOpen = ref(false)
 const { isOnline } = useOnlineStatus()
@@ -92,6 +99,19 @@ body {
 .status-text {
   font-size: 0.75rem;
   color: #6b7280;
+}
+
+.update {
+  margin-left: auto;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6d5bd0;
+  background: #f3f2fa;
+  border: 1px solid #d8d5ea;
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+  cursor: pointer;
 }
 
 .content {

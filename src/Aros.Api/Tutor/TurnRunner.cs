@@ -216,8 +216,10 @@ public class TurnRunner(
         if (!items.Any(i => Readings.HasHan(i.Prompt) && string.IsNullOrWhiteSpace(i.PromptPinyin)))
             return (items, []);
 
-        var lookup = Readings.Lookup(
-            await db.VocabWords.AsNoTracking().Where(w => !w.NeedsReview).ToListAsync(ct));
+        // Words waiting for review count here. They are never drilled on an unconfirmed reading,
+        // but reading a prompt is not drilling it — and a word introduced this very lesson is
+        // precisely the one a prompt from this lesson needs.
+        var lookup = Readings.Lookup(await db.VocabWords.AsNoTracking().ToListAsync(ct));
 
         var filled = new List<ExerciseItem>(items.Count);
         var unreadable = new List<string>();

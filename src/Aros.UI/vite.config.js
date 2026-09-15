@@ -7,7 +7,10 @@ export default defineConfig({
   plugins: [
     vue(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // Asked for rather than taken: a deploy lands on every commit, and a page open in the
+      // middle of a round must not reload itself out from under the round. See services/updates.js
+      registerType: 'prompt',
+      injectRegister: false,
       manifest: {
         name: 'Aros',
         short_name: 'Aros',

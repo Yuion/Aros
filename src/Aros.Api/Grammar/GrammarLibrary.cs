@@ -111,6 +111,12 @@ public class GrammarLibrary(AppDbContext db, ILogger<GrammarLibrary> logger)
                 // reading, not the pattern, and the trainer answers in characters
                 if (!HasHan(item.ExpectedAnswer)) continue;
 
+                // And only prompts that can stand alone. An exercise carries an instruction line
+                // — "change each sentence into a 怎么 question" — that the trainer does not show,
+                // so a prompt written entirely in Chinese arrives as 我坐车去北京。 with no way to
+                // tell what is being asked, and nothing to read it with either.
+                if (!Asks(item.Prompt)) continue;
+
                 foreach (var point in lessonPoints.Where(p => Exercises(p, item.ExpectedAnswer)))
                     candidates.Add((point, item.Prompt, item.ExpectedAnswer, exercise.Key));
             }
@@ -235,4 +241,12 @@ public class GrammarLibrary(AppDbContext db, ILogger<GrammarLibrary> logger)
 
     private static bool HasHan(string text) =>
         text.Any(c => c is >= (char)0x4E00 and <= (char)0x9FFF);
+
+    /// <summary>
+    /// Whether a prompt says what it wants without the exercise around it. A prompt with words in
+    /// it does; a line of characters on its own does not — it was a transformation or a correction
+    /// task, and the instruction that made sense of it is not part of the drill.
+    /// </summary>
+    private static bool Asks(string prompt) =>
+        prompt.Any(c => c is >= 'a' and <= 'z' or >= 'A' and <= 'Z');
 }
