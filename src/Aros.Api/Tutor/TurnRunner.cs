@@ -143,11 +143,15 @@ public class TurnRunner(
         var items = (proposed["items"]?.AsArray() ?? [])
             .Select(i => new ExerciseItem(
                 i?["prompt"]?.GetValue<string>() ?? "",
-                i?["expected_answer"]?.GetValue<string>() ?? ""))
+                i?["expected_answer"]?.GetValue<string>() ?? "",
+                i?["prompt_pinyin"]?.GetValue<string>()))
             .Where(i => i.Prompt.Length > 0)
             .ToList();
 
         if (items.Count == 0) return null;
+
+        var (readable, unreadable) = await ReadableAsync(items, ct);
+        items = readable;
 
         var fingerprint = ExerciseGuard.Fingerprint(items);
 
@@ -185,8 +189,54 @@ public class TurnRunner(
         db.Exercises.Add(exercise);
         await db.SaveChangesAsync(ct);
 
-        return new BuiltExercise(exercise,
-            missing.Count > 0 ? $"The expected answers use characters outside the bank: {string.Join(" ", missing)}." : null);
+        var warnings = new List<string>();
+
+        if (missing.Count > 0)
+            warnings.Add($"The expected answers use characters outside the bank: {string.Join(" ", missing)}.");
+
+        if (unreadable.Count > 0)
+            warnings.Add(
+                "A prompt was set in characters with no reading, and the library could not supply one for "
+                + string.Join(" ", unreadable) + ".");
+
+        return new BuiltExercise(exercise, warnings.Count > 0 ? string.Join(" ", warnings) : null);
+    }
+
+    /// <summary>
+    /// Makes sure a prompt written in characters can be read.
+    ///
+    /// The model is asked for the reading alongside the prompt, and mostly gives it. When it does
+    /// not, the reading is assembled from the vocabulary the learner has already been taught —
+    /// which is the vocabulary a prompt is supposed to be built from, so it nearly always covers
+    /// it. Whatever is left over is named in the warning rather than left as a silent gap.
+    /// </summary>
+    private async Task<(List<ExerciseItem> Items, List<string> Unreadable)> ReadableAsync(
+        List<ExerciseItem> items, CancellationToken ct)
+    {
+        if (!items.Any(i => Readings.HasHan(i.Prompt) && string.IsNullOrWhiteSpace(i.PromptPinyin)))
+            return (items, []);
+
+        var lookup = Readings.Lookup(
+            await db.VocabWords.AsNoTracking().Where(w => !w.NeedsReview).ToListAsync(ct));
+
+        var filled = new List<ExerciseItem>(items.Count);
+        var unreadable = new List<string>();
+
+        foreach (var item in items)
+        {
+            if (!Readings.HasHan(item.Prompt) || !string.IsNullOrWhiteSpace(item.PromptPinyin))
+            {
+                filled.Add(item);
+                continue;
+            }
+
+            var (reading, unknown) = Readings.For(item.Prompt, lookup);
+
+            filled.Add(item with { PromptPinyin = reading.Length > 0 ? reading : null });
+            unreadable.AddRange(unknown);
+        }
+
+        return (filled, [.. unreadable.Distinct()]);
     }
 
     /// <summary>

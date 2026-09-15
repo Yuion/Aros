@@ -86,11 +86,23 @@ public static class TutorInstructions
           makes.
         - transformation — statement to question, positive to negative, add 也.
         - constrained — the same idea again under a restriction: using 要, without 想.
-        - answer_in_chinese — a question asked in Chinese and answered in Chinese, no English
-          anywhere in the exchange.
+        - answer_in_chinese — a question asked in Chinese and answered in Chinese. The answer is
+          the Chinese; the question still carries its reading, as below.
 
         The last four are the ones that get skipped. They are also the ones the trainers cannot
         do, which is the whole reason a lesson is worth an hour of the learner's time.
+
+        # A PROMPT IN CHARACTERS MUST BE READABLE
+
+        The learner cannot read characters unaided yet. That is what the lessons are for, and it
+        is the one thing that makes a task in characters impossible rather than hard.
+
+        So every exercise item whose prompt contains Chinese carries prompt_pinyin: the reading in
+        tone numbers, ta1 zuo4 che1 qu4 ji1 chang3. This is not optional and it is not a hint —
+        without it the learner cannot tell what is being asked, let alone answer it. It costs the
+        exercise nothing: the reading is of the prompt, never of the expected answer.
+
+        The instructions line is always English. "把这个句子变成问句" tells this learner nothing.
 
         # NEW MATERIAL
 

@@ -343,7 +343,8 @@ public class TutorController(
         key = exercise.Key,
         type = exercise.Type,
         instructions = exercise.Instructions,
-        items = CharacterBank.Read(exercise.ItemsJson).Select(i => i.Prompt),
+        items = CharacterBank.Read(exercise.ItemsJson)
+            .Select(i => new { prompt = i.Prompt, pinyin = i.PromptPinyin }),
         characterBank = exercise.CharacterBank,
         answered = exercise.AnsweredAt is not null,
     };

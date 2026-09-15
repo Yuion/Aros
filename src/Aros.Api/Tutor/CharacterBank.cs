@@ -3,7 +3,12 @@ using Aros.Api.Data.Entities;
 
 namespace Aros.Api.Tutor;
 
-public record ExerciseItem(string Prompt, string ExpectedAnswer);
+/// <param name="PromptPinyin">
+/// The reading of <paramref name="Prompt"/> when the prompt is written in characters, so a task
+/// set in Chinese can still be read. Null for an English prompt, and null on every exercise stored
+/// before prompts carried a reading.
+/// </param>
+public record ExerciseItem(string Prompt, string ExpectedAnswer, string? PromptPinyin = null);
 
 /// <summary>
 /// Builds the character bank from the answers the model had in mind, rather than asking the model

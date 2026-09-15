@@ -123,7 +123,11 @@
           </header>
 
           <ol class="exercise-items">
-            <li v-for="(item, i) in turn.exercise.items" :key="i" lang="zh">{{ item }}</li>
+            <li v-for="(item, i) in turn.exercise.items" :key="i">
+              <span :lang="item.pinyin ? 'zh' : undefined">{{ item.prompt ?? item }}</span>
+              <!-- A task set in characters is unreadable without this -->
+              <span v-if="item.pinyin" class="ex-reading">{{ item.pinyin }}</span>
+            </li>
           </ol>
 
           <template v-if="turn.exercise.characterBank.length">
@@ -814,6 +818,18 @@ h1 {
   margin: 0.5rem 0 0.8rem 1.2rem;
   font-size: 1.05rem;
   line-height: 1.9;
+}
+
+.exercise-items li {
+  margin-bottom: 0.2rem;
+}
+
+/* The reading under a prompt written in characters — small, and plainly not part of the task */
+.ex-reading {
+  display: block;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: #9ca3af;
 }
 
 .bank {

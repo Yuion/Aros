@@ -61,6 +61,11 @@ public static class TurnSchema
             ["items"] = Array(Object(new JsonObject
             {
                 ["prompt"] = Text("What the learner sees for this item."),
+                ["prompt_pinyin"] = NullableText(
+                    "The prompt's reading in tone numbers — ta1 zuo4 che1 qu4 ji1 chang3 — whenever "
+                    + "the prompt contains Chinese characters. The learner cannot read characters "
+                    + "unaided, so a prompt in characters without this is a task they cannot start. "
+                    + "Null when the prompt is English."),
                 ["expected_answer"] = Text(
                     "The answer you have in mind. For a Chinese-production task this must be the "
                     + "full Chinese answer: the application builds the character bank from it, so "
@@ -102,6 +107,12 @@ public static class TurnSchema
     }
 
     private static JsonObject Array(JsonNode items) => new() { ["type"] = "array", ["items"] = items };
+
+    private static JsonObject NullableText(string description) => new()
+    {
+        ["type"] = new JsonArray("string", "null"),
+        ["description"] = description,
+    };
 
     private static JsonObject Text(string description) => new()
     {
