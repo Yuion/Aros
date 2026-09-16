@@ -13,6 +13,9 @@ public record SpeakRequest(string? Text);
 
 public record RetireRequest(bool Retired);
 
+/// <summary>A correction to a sentence's reading or translation. Either may be empty.</summary>
+public record ReadingsRequest(string? Pinyin, string? English);
+
 [ApiController]
 [Route("api/[controller]")]
 public class TtsController(AppDbContext db, TtsService tts) : ControllerBase
@@ -126,6 +129,39 @@ public class TtsController(AppDbContext db, TtsService tts) : ControllerBase
 
         return Ok(clips.Select(Describe));
     }
+
+    /// <summary>
+    /// Corrects a sentence's readings by hand.
+    ///
+    /// The readings arrive with a lesson and are usually right, but "usually" is the problem: one
+    /// 你 imported as ni2 quietly becomes the expected answer in the pinyin mode, and marks the
+    /// right answer wrong every time it comes round. Until now the only cure was deleting the
+    /// sentence and paying for the audio again.
+    ///
+    /// The sentence itself is not editable here. The audio is addressed by the hash of the text
+    /// that was spoken, so changing it would leave a clip saying one thing and a library claiming
+    /// another; that is a delete and a new sentence, which the page already offers.
+    ///
+    /// An empty reading is allowed and means what it always meant: the mode that needs it skips
+    /// this sentence. The practice history is untouched — what you knew, you still knew.
+    /// </summary>
+    [HttpPut("clips/{id:int}/readings")]
+    public async Task<IActionResult> Readings(int id, [FromBody] ReadingsRequest request, CancellationToken ct)
+    {
+        var clip = await db.TtsClips.Include(c => c.Stats).FirstOrDefaultAsync(c => c.Id == id, ct);
+        if (clip is null) return NotFound();
+
+        clip.Pinyin = Tidy(request.Pinyin);
+        clip.English = Tidy(request.English);
+
+        await db.SaveChangesAsync(ct);
+
+        return Ok(Describe(clip));
+    }
+
+    /// <summary>Trimmed, and with runs of whitespace closed up — pasted text arrives with both.</summary>
+    private static string Tidy(string? text) =>
+        string.Join(' ', (text ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     /// <summary>
     /// Retire a sentence you know, or put it back. Nothing is deleted: the audio, the readings and

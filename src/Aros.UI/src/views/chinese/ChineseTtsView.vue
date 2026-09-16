@@ -149,12 +149,57 @@
           </div>
 
           <div v-if="opened === clip.id" class="clip-body">
-            <p class="reading" :class="{ missing: !clip.pinyin }">
-              {{ clip.pinyin || 'No pinyin — the pinyin mode skips this sentence' }}
-            </p>
-            <p class="reading english" :class="{ missing: !clip.english }">
-              {{ clip.english || 'No translation — the English mode skips this sentence' }}
-            </p>
+            <!-- The readings are imported, and an imported reading can be wrong: one 你 as ni2
+                 becomes the expected answer in the pinyin mode and marks you wrong for being
+                 right. Correcting it here costs nothing — the audio is of the characters. -->
+            <template v-if="editing !== clip.id">
+              <p class="reading" :class="{ missing: !clip.pinyin }" @click="startEdit(clip)">
+                {{ clip.pinyin || 'No pinyin — the pinyin mode skips this sentence' }}
+              </p>
+              <p class="reading english" :class="{ missing: !clip.english }" @click="startEdit(clip)">
+                {{ clip.english || 'No translation — the English mode skips this sentence' }}
+              </p>
+              <button class="link-btn edit-link" @click="startEdit(clip)">Edit readings</button>
+            </template>
+
+            <form v-else class="edit-readings" @submit.prevent="saveEdit(clip)">
+              <label>
+                <span>Pinyin</span>
+                <input
+                  :ref="(el) => { if (el) pinyinField = el }"
+                  v-model="draft.pinyin"
+                  placeholder="ni3 zen3 me5 qu4 bei3 jing1"
+                  autocapitalize="none"
+                  autocomplete="off"
+                  spellcheck="false"
+                  @keydown.esc="cancelEdit"
+                />
+              </label>
+
+              <label>
+                <span>English</span>
+                <input
+                  v-model="draft.english"
+                  placeholder="How do you go to Beijing?"
+                  autocomplete="off"
+                  @keydown.esc="cancelEdit"
+                />
+              </label>
+
+              <p class="edit-note">
+                The sentence itself cannot change here — the audio is of those characters. Leave a
+                field empty and the mode that needs it skips this sentence.
+              </p>
+
+              <div class="edit-actions">
+                <button type="submit" class="primary-btn" :disabled="saving">
+                  {{ saving ? 'Saving…' : 'Save' }}
+                </button>
+                <button type="button" class="secondary-btn" :disabled="saving" @click="cancelEdit">
+                  Cancel
+                </button>
+              </div>
+            </form>
 
             <!-- Apart, not added up: a sentence can be solid when you pick it out of four and
                  hopeless when you have to write the English -->
@@ -183,7 +228,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { api } from '@/services/api'
 import { clip as clipAudio, release } from '@/services/audio'
 import { GAP_FILTERS, FILTERS as BASE_FILTERS, arrange } from '@/services/library'
@@ -242,6 +287,47 @@ const sort = ref('added')
 const descending = ref(true)
 const opened = ref(null)
 const retiring = ref(null)
+
+// Which clip is being corrected, and the draft of its readings
+const editing = ref(null)
+const draft = ref({ pinyin: '', english: '' })
+const saving = ref(false)
+
+// The input being edited, assigned by the template. Not a ref(): only one row is open at a time,
+// and a ref inside v-for collects an array rather than the element.
+let pinyinField = null
+
+function startEdit(clip) {
+  editing.value = clip.id
+  draft.value = { pinyin: clip.pinyin ?? '', english: clip.english ?? '' }
+  nextTick(() => pinyinField?.focus())
+}
+
+function cancelEdit() {
+  editing.value = null
+}
+
+/** Corrects the readings in place. The sentence, the audio and every streak stay as they are. */
+async function saveEdit(clip) {
+  if (saving.value) return
+
+  saving.value = true
+  error.value = ''
+
+  try {
+    const updated = await api.put(`/tts/clips/${clip.id}/readings`, {
+      pinyin: draft.value.pinyin,
+      english: draft.value.english,
+    })
+
+    clips.value = clips.value.map((c) => (c.id === updated.id ? updated : c))
+    editing.value = null
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    saving.value = false
+  }
+}
 const speaking = ref(false)
 
 const silent = computed(() => clips.value.filter((c) => !c.hasAudio))
@@ -640,6 +726,74 @@ textarea:focus {
   border-radius: 7px;
   padding: 0.45rem 0.65rem;
   margin-bottom: 0.6rem;
+}
+
+.reading {
+  cursor: text;
+}
+
+.edit-link {
+  margin-bottom: 0.4rem;
+}
+
+.edit-readings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.edit-readings label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9ca3af;
+}
+
+.edit-readings input {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  color: #1a1a1a;
+}
+
+.edit-readings input:focus {
+  outline: none;
+  border-color: #6d5bd0;
+}
+
+.edit-note {
+  font-size: 0.72rem;
+  color: #9ca3af;
+  line-height: 1.4;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.primary-btn {
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.4rem 0.9rem;
+  border: none;
+  border-radius: 8px;
+  background: #6d5bd0;
+  color: white;
+  cursor: pointer;
+}
+
+.primary-btn:disabled {
+  background: #d8d5ea;
+  cursor: default;
 }
 
 .link-btn {
