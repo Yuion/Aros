@@ -29,6 +29,31 @@ public class GrammarController(GrammarService grammar, GrammarLibrary library) :
             wrong = row.Progress?.WrongCount ?? 0,
             streak = row.Progress?.ConsecutiveCorrect ?? 0,
             lastSeenAt = row.Progress?.LastSeenAt,
+            createdAt = row.Point.CreatedAt,
+            examples = row.Point.Examples,
+        }));
+    }
+
+    /// <summary>The drills behind one pattern — what it will ask, and when it last asked it.</summary>
+    [HttpGet("points/{id:int}/drills")]
+    public async Task<IActionResult> Drills(int id, CancellationToken ct)
+    {
+        var drills = await grammar.DrillsAsync(id, ct);
+
+        return Ok(drills.Select(row => new
+        {
+            id = row.Item.Id,
+            prompt = row.Item.Prompt,
+            answer = row.Item.Answer,
+            source = row.Item.Source,
+            // Where it came from, in words: written for this pattern, filed with it, or harvested
+            origin = row.Item.Source switch
+            {
+                "drill" => "written for this pattern",
+                "example" => "an example from the write-up",
+                _ => $"exercise {row.Item.Source}",
+            },
+            lastAskedAt = row.LastAskedAt,
         }));
     }
 

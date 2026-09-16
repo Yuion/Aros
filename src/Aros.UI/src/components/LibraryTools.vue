@@ -10,7 +10,7 @@
 
     <div class="sort">
       <select v-model="sort" class="pick" aria-label="Sort by">
-        <option v-for="option in SORTS" :key="option.value" :value="option.value">
+        <option v-for="option in sorts" :key="option.value" :value="option.value">
           {{ option.label }}
         </option>
       </select>
@@ -28,6 +28,8 @@ import { SORTS, directionLabel } from '@/services/library'
 
 defineProps({
   filters: { type: Array, required: true },
+  // A pattern sorts by title where a word sorts by reading, so the list is the caller's
+  sorts: { type: Array, default: () => SORTS },
   placeholder: { type: String, default: 'Find one' },
 })
 

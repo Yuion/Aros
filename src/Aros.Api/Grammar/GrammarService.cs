@@ -307,6 +307,36 @@ public class GrammarService(AppDbContext db, IMemoryCache cache)
         ];
     }
 
+    /// <summary>
+    /// The drills one pattern is asked with, and when each was last put to you. The library shows
+    /// them: they are the pattern's own material, and seeing what a pattern will ask is the point
+    /// of opening it — the trainer gives them one at a time and shuffled, which this is not.
+    /// </summary>
+    public async Task<IReadOnlyList<(GrammarItem Item, DateTime? LastAskedAt)>> DrillsAsync(
+        int pointId, CancellationToken ct)
+    {
+        var items = await db.GrammarItems
+            .AsNoTracking()
+            .Where(i => i.GrammarPointId == pointId)
+            .OrderBy(i => i.Id)
+            .ToListAsync(ct);
+
+        if (items.Count == 0) return [];
+
+        var ids = items.Select(i => i.Id).ToList();
+
+        var asked = await db.GrammarAnswers
+            .AsNoTracking()
+            .Where(a => ids.Contains(a.GrammarItemId))
+            .GroupBy(a => a.GrammarItemId)
+            .Select(g => new { ItemId = g.Key, Last = g.Max(a => a.AnsweredAt) })
+            .ToListAsync(ct);
+
+        var lastAsked = asked.ToDictionary(a => a.ItemId, a => a.Last);
+
+        return [.. items.Select(item => (item, lastAsked.TryGetValue(item.Id, out var at) ? at : (DateTime?)null))];
+    }
+
     private async Task<(List<GrammarPoint> Points, List<GrammarItem> Items, Dictionary<int, GrammarProgress> Progress)>
         PoolAsync(CancellationToken ct)
     {

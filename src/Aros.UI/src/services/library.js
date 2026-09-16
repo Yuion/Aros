@@ -1,8 +1,8 @@
 /**
- * Searching, filtering and ordering for the two libraries — the sentence list and the word list.
- * They hold different things but answer the same questions: where is that one, what is still being
- * asked, and what have I finished with. One set of rules keeps them honest about the words they
- * use, since "mastered" must not mean two things across two pages.
+ * Searching, filtering and ordering for the three libraries — sentences, words and grammar
+ * patterns. They hold different things but answer the same questions: where is that one, what is
+ * still being asked, and what have I finished with. One set of rules keeps them honest about the
+ * words they use, since "mastered" must not mean two things across three pages.
  *
  * Items arrive with the state the API worked out: ready, resting, mastered, retired, unavailable.
  */
@@ -21,12 +21,20 @@ export const FILTERS = [
 export const GAP_FILTERS = {
   vocab: { value: 'gaps', label: 'No audio yet' },
   clips: { value: 'gaps', label: 'Missing readings' },
+  grammar: { value: 'gaps', label: 'No drills yet' },
 }
 
 export const SORTS = [
   { value: 'added', label: 'Added', labels: ['oldest first', 'newest first'] },
   { value: 'alphabetical', label: 'Pinyin A–Z', labels: ['A to Z', 'Z to A'] },
   { value: 'practice', label: 'Times practised', labels: ['least practised', 'most practised'] },
+]
+
+/** A pattern has no reading of its own; it sorts on its title. */
+export const GRAMMAR_SORTS = [
+  SORTS[0],
+  { value: 'alphabetical', label: 'Title A–Z', labels: ['A to Z', 'Z to A'] },
+  SORTS[2],
 ]
 
 function done(item) {
@@ -48,8 +56,9 @@ export function matches(item, filter) {
     // Missed at least once and still being asked: finishing something does not make it a worry
     case 'needsWork':
       return item.wrong > 0 && !done(item)
+    // What this list cannot ask about yet: no audio, no reading, no drills
     case 'gaps':
-      return item.hasAudio === false || item.pinyin === '' || item.english === ''
+      return item.hasAudio === false || item.pinyin === '' || item.english === '' || item.drills === 0
     default:
       return true
   }
@@ -66,7 +75,7 @@ const COMPARE = {
 }
 
 function reading(item) {
-  return item.pinyin || item.sentence || item.characters || ''
+  return item.pinyin || item.sentence || item.characters || item.title || ''
 }
 
 export function arrange(items, { search = '', filter = 'rotation', sort = 'added', descending = true } = {}) {
@@ -76,7 +85,7 @@ export function arrange(items, { search = '', filter = 'rotation', sort = 'added
     (item) =>
       matches(item, filter) &&
       (!needle ||
-        [item.sentence, item.characters, item.pinyin, item.english].some((field) =>
+        [item.sentence, item.characters, item.pinyin, item.english, item.title, item.summary].some((field) =>
           (field ?? '').toLowerCase().includes(needle)
         ))
   )
