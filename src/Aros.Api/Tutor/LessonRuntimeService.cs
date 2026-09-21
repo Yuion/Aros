@@ -30,13 +30,49 @@ public class LessonRuntimeService(AppDbContext db)
     /// whether "1. 我想喝茶" is an answer to grade or a request to carry on, so it says which in
     /// as few words as possible.
     /// </summary>
-    public static string Describe(LessonRuntime runtime) => Describe(runtime, []);
+    public static string Describe(LessonRuntime runtime) => Describe(runtime, [], 0);
+
+    public static string Describe(LessonRuntime runtime, IReadOnlyList<string> typesUsed) =>
+        Describe(runtime, typesUsed, 0);
+
+    /// <summary>
+    /// How many lessons in a row taught nothing new — no vocabulary, no grammar.
+    ///
+    /// Counted here rather than judged by the model, because the model is the one that has been
+    /// getting it wrong: lessons 18, 19 and 20 opened with the same plan and introduced nothing
+    /// between them. A number it cannot argue with, in the state it is told is authoritative, is
+    /// the only version of this instruction that has teeth.
+    /// </summary>
+    public async Task<int> LessonsWithoutNewMaterialAsync(CancellationToken ct)
+    {
+        var recent = await db.Lessons
+            .AsNoTracking()
+            .OrderByDescending(l => l.Number)
+            .Take(6)
+            .Select(l => new { l.NewVocabulary, l.NewGrammar })
+            .ToListAsync(ct);
+
+        var drought = 0;
+
+        foreach (var lesson in recent)
+        {
+            if (lesson.NewVocabulary.Count > 0 || lesson.NewGrammar.Count > 0) break;
+            drought++;
+        }
+
+        return drought;
+    }
 
     /// <param name="typesUsed">
     /// The exercise shapes this lesson has already used. Passed in rather than stored: it is the
     /// exercises themselves that know, and a second copy would drift.
     /// </param>
-    public static string Describe(LessonRuntime runtime, IReadOnlyList<string> typesUsed)
+    /// <param name="lessonsWithoutNewMaterial">
+    /// Lessons in a row that taught nothing new. Anything above zero is a problem to fix in this
+    /// lesson, not a statistic.
+    /// </param>
+    public static string Describe(
+        LessonRuntime runtime, IReadOnlyList<string> typesUsed, int lessonsWithoutNewMaterial)
     {
         var text = new StringBuilder();
         text.AppendLine("LESSON RUNTIME STATE (authoritative for what to do this turn)");
@@ -75,8 +111,17 @@ public class LessonRuntimeService(AppDbContext db)
             text.AppendLine($"  last_exercise_type: {typesUsed[^1]} — the next one must be a different shape");
         }
 
-        if (runtime.NewVocabularyThisLesson.Count > 0)
-            text.AppendLine($"  new_vocabulary_this_lesson: {string.Join(" ", runtime.NewVocabularyThisLesson)}");
+        text.AppendLine(runtime.NewVocabularyThisLesson.Count > 0
+            ? $"  new_vocabulary_this_lesson: {string.Join(" ", runtime.NewVocabularyThisLesson)}"
+            : "  new_vocabulary_this_lesson: none yet");
+
+        if (lessonsWithoutNewMaterial > 0)
+        {
+            text.AppendLine($"  lessons_taught_nothing_new: {lessonsWithoutNewMaterial} in a row");
+            text.AppendLine(
+                "  → This lesson must introduce new vocabulary or a new pattern, early, before "
+                + "any further practice of what is already known. Revision is the trainers' work.");
+        }
 
         if (runtime.NewGrammarThisLesson.Count > 0)
             text.AppendLine($"  new_grammar_this_lesson: {string.Join(", ", runtime.NewGrammarThisLesson)}");
@@ -183,6 +228,11 @@ public class LessonRuntimeService(AppDbContext db)
         runtime.LessonId = NewLessonId();
         runtime.Phase = LessonPhase.Idle;
         runtime.CurrentTopic = "";
+
+        // The plan belongs to the lesson that stated it. Leaving it behind is how lessons 18, 19
+        // and 20 all opened with "practise 怎么 … leaving new destinations aside": the next lesson
+        // read the last one's plan as its own and dutifully carried it out again.
+        runtime.Plan = "";
         runtime.ExerciseKey = null;
         runtime.ExerciseAlreadySent = false;
         runtime.AwaitingUserAnswer = false;

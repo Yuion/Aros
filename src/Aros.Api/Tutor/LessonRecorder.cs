@@ -49,6 +49,10 @@ public class LessonRecorder(
           the subject and the sentence, and write the prompt so that exactly one Chinese answer is
           right. A point the lesson only mentioned in passing needs none.
         - new_vocabulary lists the same words as characters only, for the lesson record.
+        - next_recommended_topic names the next NEW thing to teach. "Consolidate", "review" and
+          "more practice" are not topics: the trainers do that daily, and three lessons in a row
+          have already been spent on it. If one point needs clearing up first, say so in a clause
+          and then name what follows it.
         - This lesson is number LESSON_NUMBER and today is TODAY.
         """;
 
@@ -70,7 +74,10 @@ public class LessonRecorder(
         var runtime = await runtimeService.CurrentAsync(ct);
         request = string.Join(Environment.NewLine + Environment.NewLine,
             request,
-            LessonRuntimeService.Describe(runtime, await runtimeService.TypesUsedAsync(runtime, ct)));
+            LessonRuntimeService.Describe(
+                runtime,
+                await runtimeService.TypesUsedAsync(runtime, ct),
+                await runtimeService.LessonsWithoutNewMaterialAsync(ct)));
 
         // The shape is enforced by the API, not merely requested: with a schema attached the model
         // cannot return prose, a code fence, or a field that is missing or misspelled.

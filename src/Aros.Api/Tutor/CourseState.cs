@@ -103,16 +103,36 @@ public class CourseState(AppDbContext db)
     private static string Line(VocabDirection direction, double accuracy, int answered) =>
         string.Create(CultureInfo.InvariantCulture, $"{Label(direction)}: {accuracy * 100:0}% of {answered}");
 
+    /// <summary>How many weak points are worth naming at all. See the note below.</summary>
+    private const int TargetsShown = 3;
+
+    /// <summary>
+    /// The handful of things worth keeping half an eye on — not a to-do list.
+    ///
+    /// Every open weakness used to be listed, and eight of them read as an agenda: three lessons
+    /// in a row went by drilling them and teaching nothing. The trainers drill weaknesses better
+    /// and without spending an hour of tutoring on it, so the three worst are named as background
+    /// and the rest are left where they are already being worked.
+    /// </summary>
     private static void AppendTargets(StringBuilder text, List<WeakPoint> weak, List<PronunciationRule> rules)
     {
+        var worst = weak
+            .OrderByDescending(w => w.Severity)
+            .ThenByDescending(w => w.LastSeen)
+            .Take(TargetsShown)
+            .Select(w => w.Target);
+
         var newest = rules.OrderByDescending(r => r.IntroducedInLesson ?? 0).Take(2).Select(r => r.Title);
-        var targets = weak.Select(w => w.Target).Concat(newest).Distinct().ToList();
+        var targets = worst.Concat(newest).Distinct().ToList();
 
         if (targets.Count == 0) return;
 
+        var hidden = Math.Max(0, weak.Count - TargetsShown);
+
         text.AppendLine();
-        text.AppendLine("CURRENT TARGETS");
+        text.AppendLine("CURRENT TARGETS (background — the trainers drill these; do not build a lesson on them)");
         foreach (var target in targets) text.AppendLine($"  {target}");
+        if (hidden > 0) text.AppendLine($"  and {hidden} more, being drilled outside the lesson");
     }
 
     /// <summary>

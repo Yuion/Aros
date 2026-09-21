@@ -42,7 +42,10 @@ public class TutorService(AppDbContext db, CourseState courseState, LessonRuntim
         var settings = await SettingsAsync(ct);
         var state = await courseState.BuildAsync(ct);
         var current = await runtimeService.CurrentAsync(ct);
-        var runtime = LessonRuntimeService.Describe(current, await runtimeService.TypesUsedAsync(current, ct));
+        var runtime = LessonRuntimeService.Describe(
+            current,
+            await runtimeService.TypesUsedAsync(current, ct),
+            await runtimeService.LessonsWithoutNewMaterialAsync(ct));
 
         return (settings.Instructions, state, runtime);
     }
