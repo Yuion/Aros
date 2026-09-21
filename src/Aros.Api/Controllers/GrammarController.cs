@@ -6,6 +6,9 @@ namespace Aros.Api.Controllers;
 
 public record GrammarAnswerRequest(Guid Token, string? Text);
 
+/// <summary>Retire a pattern you are done with, or put it back in rotation.</summary>
+public record GrammarRetireRequest(bool Retired);
+
 [ApiController]
 [Route("api/[controller]")]
 public class GrammarController(GrammarService grammar, GrammarLibrary library) : ControllerBase
@@ -30,9 +33,18 @@ public class GrammarController(GrammarService grammar, GrammarLibrary library) :
             streak = row.Progress?.ConsecutiveCorrect ?? 0,
             lastSeenAt = row.Progress?.LastSeenAt,
             createdAt = row.Point.CreatedAt,
+            retiredAt = row.Point.RetiredAt,
             examples = row.Point.Examples,
         }));
     }
+
+    /// <summary>
+    /// Retire a pattern you know, or put it back. Nothing is deleted: the drills, the answers and
+    /// the streak stay, and the trainer simply stops asking.
+    /// </summary>
+    [HttpPut("points/{id:int}/retired")]
+    public async Task<IActionResult> Retire(int id, [FromBody] GrammarRetireRequest request, CancellationToken ct) =>
+        await grammar.RetireAsync(id, request.Retired, ct) ? NoContent() : NotFound();
 
     /// <summary>The drills behind one pattern — what it will ask, and when it last asked it.</summary>
     [HttpGet("points/{id:int}/drills")]

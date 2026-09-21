@@ -93,6 +93,12 @@ public class GrammarPoint
     /// </summary>
     public List<string> Drills { get; set; } = [];
 
+    /// <summary>
+    /// Set by hand when a pattern needs no more practice. The drills, the record and the streak
+    /// all stay; the trainer simply stops asking, and the page can put it back.
+    /// </summary>
+    public DateTime? RetiredAt { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 

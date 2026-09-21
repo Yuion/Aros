@@ -297,7 +297,8 @@ public class GrammarService(AppDbContext db, IMemoryCache cache)
                 var streak = Streak(point, progress);
 
                 var state =
-                    drills == 0 ? "unavailable"
+                    point.RetiredAt is not null ? "retired"
+                    : drills == 0 ? "unavailable"
                     : ladder.IsMastered(streak) ? "mastered"
                     : ladder.IsResting(streak, mine?.LastSeenAt) ? "resting"
                     : "ready";
@@ -347,8 +348,19 @@ public class GrammarService(AppDbContext db, IMemoryCache cache)
         return (points, items, progress);
     }
 
+    /// <summary>
+    /// Retired by hand counts as mastered everywhere, so the bars, the start button and the
+    /// planner agree with the trainer rather than offering a pattern it will not ask. The ladder
+    /// and the streak are returned as a pair on purpose: a lapsed pattern masters at eight and a
+    /// clean one at five, and reporting one against the other would make retirement mean two
+    /// different things.
+    /// </summary>
     private static Availability.Standing Standing(GrammarPoint point, Dictionary<int, GrammarProgress> progress)
     {
+        if (point.RetiredAt is not null)
+            return new Availability.Standing(
+                RestSchedule.VocabularyClean, (RestSchedule.VocabularyClean.MasteryStreak, null));
+
         var mine = progress.GetValueOrDefault(point.Id);
 
         return new Availability.Standing(
@@ -357,7 +369,25 @@ public class GrammarService(AppDbContext db, IMemoryCache cache)
     }
 
     private static int Streak(GrammarPoint point, Dictionary<int, GrammarProgress> progress) =>
-        progress.GetValueOrDefault(point.Id)?.ConsecutiveCorrect ?? 0;
+        point.RetiredAt is not null
+            ? RestSchedule.VocabularyClean.MasteryStreak
+            : progress.GetValueOrDefault(point.Id)?.ConsecutiveCorrect ?? 0;
+
+    /// <summary>
+    /// Retires a pattern, or puts it back. Nothing is deleted — the drills and every answer stay,
+    /// and the trainer stops asking because the standing says mastered, not because the record was
+    /// rewritten.
+    /// </summary>
+    public async Task<bool> RetireAsync(int id, bool retired, CancellationToken ct)
+    {
+        var point = await db.GrammarPoints.FirstOrDefaultAsync(p => p.Id == id, ct);
+        if (point is null) return false;
+
+        point.RetiredAt = retired ? DateTime.UtcNow : null;
+        await db.SaveChangesAsync(ct);
+
+        return true;
+    }
 
     private static double Weight(
         GrammarPoint point, Dictionary<int, GrammarProgress> progress, MissTally misses) =>

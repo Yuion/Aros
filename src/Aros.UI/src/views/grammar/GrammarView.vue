@@ -117,6 +117,13 @@
                 <template v-if="point.lastSeenAt">last asked {{ day(point.lastSeenAt) }} · </template>
                 added {{ day(point.createdAt) }}
               </p>
+
+              <div class="p-actions">
+                <button class="ghost" :disabled="retiring === point.id" @click="retire(point)">
+                  {{ point.retiredAt ? 'Put back in rotation' : 'Retire as mastered' }}
+                </button>
+                <span v-if="point.retiredAt" class="p-retired">retired {{ day(point.retiredAt) }}</span>
+              </div>
             </div>
           </li>
         </ul>
@@ -168,7 +175,11 @@ const descending = ref(true)
 // A pattern with no drills is not in rotation, whatever its ladder says
 const shown = computed(() =>
   arrange(
-    points.value.map((p) => ({ ...p, state: p.drills === 0 ? 'unavailable' : p.state })),
+    points.value.map((p) => ({
+      ...p,
+      // Retirement outranks everything: a pattern you are done with is done with, drills or not
+      state: p.retiredAt ? 'retired' : p.drills === 0 ? 'unavailable' : p.state,
+    })),
     { search: search.value, filter: filter.value, sort: sort.value, descending: descending.value },
   ),
 )
@@ -181,6 +192,22 @@ const nothingShown = computed(() =>
 const opened = ref(null)
 const drills = ref([])
 const loadingDrills = ref(false)
+const retiring = ref(null)
+
+/** Done with it, or not after all. The drills and the record stay either way. */
+async function retire(point) {
+  retiring.value = point.id
+  error.value = ''
+
+  try {
+    await api.put(`/grammar/points/${point.id}/retired`, { retired: !point.retiredAt })
+    await load()
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    retiring.value = null
+  }
+}
 
 async function expand(id) {
   if (opened.value === id) {
@@ -206,6 +233,7 @@ function day(value) {
 }
 
 function stateLabel(point) {
+  if (point.state === 'retired') return 'retired'
   if (point.state === 'unavailable') return 'no drills yet'
   if (point.state === 'mastered') return 'mastered'
   if (point.state === 'resting') return 'resting'
@@ -476,6 +504,42 @@ h1 {
 .p-record {
   font-size: 0.72rem;
   color: #9ca3af;
+}
+
+.p-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.p-retired {
+  font-size: 0.7rem;
+  color: #9ca3af;
+}
+
+.ghost {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  color: #4b5563;
+  cursor: pointer;
+}
+
+.ghost:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.p-state.retired {
+  color: #9ca3af;
+}
+
+.points li.retired {
+  opacity: 0.6;
 }
 
 @media (max-width: 480px) {
