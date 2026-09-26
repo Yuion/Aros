@@ -148,6 +148,13 @@
               >
                 {{ speaking === word.id ? '…' : '▶' }}
               </button>
+              <button
+                class="brush"
+                title="How it is written"
+                @click.stop="showStrokes(word.id)"
+              >
+                ✍
+              </button>
               <span class="chars" lang="zh">{{ word.characters }}</span>
               <span class="pinyin">{{ word.pinyin }}</span>
               <span class="english">{{ word.english }}</span>
@@ -159,6 +166,8 @@
             </div>
 
             <div v-if="opened === word.id" class="word-body">
+              <StrokeOrder :word="word.characters" />
+
               <!-- Apart, not added up: recognising 水 and producing it are different skills -->
               <ul class="directions">
                 <li v-for="d in word.directions" :key="d.key" class="direction">
@@ -189,6 +198,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import { api } from '@/services/api'
 import { GAP_FILTERS, FILTERS as BASE_FILTERS, arrange } from '@/services/library'
 import LibraryTools from '@/components/LibraryTools.vue'
+import StrokeOrder from '@/components/StrokeOrder.vue'
 
 // Words carry their own gap: one with no audio has never been spoken
 const FILTERS = [...BASE_FILTERS.slice(0, -1), GAP_FILTERS.vocab, BASE_FILTERS.at(-1)]
@@ -237,6 +247,11 @@ const nothingShown = computed(() =>
     ? `Nothing matches “${search.value.trim()}”.`
     : 'Nothing here — try a different filter.'
 )
+
+/** The brush opens the row rather than toggling it: pressing it twice meant to see it again. */
+function showStrokes(id) {
+  opened.value = id
+}
 
 function expand(id) {
   opened.value = opened.value === id ? null : id
@@ -728,6 +743,22 @@ h1 {
   opacity: 0.6;
 }
 
+/* Sits beside play and costs nothing, so it is the quieter of the two */
+.brush {
+  padding: 0.2rem 0.45rem;
+  font-size: 0.9rem;
+  line-height: 1;
+  color: #6b7280;
+  background: white;
+  border: 1px solid #ececec;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.brush:hover {
+  border-color: #6b7280;
+}
+
 .word-list li {
   border: 1px solid #f0efec;
   border-radius: 7px;
@@ -740,7 +771,7 @@ h1 {
 
 .word-head {
   display: grid;
-  grid-template-columns: auto auto 7rem 1fr auto auto;
+  grid-template-columns: auto auto auto 7rem 1fr auto auto;
   align-items: center;
   gap: 0.6rem;
   padding: 0.45rem 0.55rem;

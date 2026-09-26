@@ -25,6 +25,9 @@ builder.Services.Configure<TtsOptions>(builder.Configuration.GetSection(TtsOptio
 builder.Services.Configure<AiOptions>(builder.Configuration.GetSection(AiOptions.SectionName));
 builder.Services.AddMemoryCache();
 
+// 31 MB of character data, expanded once and shared, not once per request
+builder.Services.AddSingleton<Aros.Api.Strokes.StrokeLibrary>();
+
 builder.Services.AddHttpClient<NarakeetClient>(client =>
 {
     client.BaseAddress = new Uri("https://api.narakeet.com/");
