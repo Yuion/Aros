@@ -425,15 +425,37 @@ h1 {
 
 /* Never moves, never resizes: the tablet is mapped to this rectangle */
 .box {
+  position: relative;
   width: 420px;
   height: 420px;
   border: 1px solid #e5e7eb;
   border-radius: 10px;
-  background:
-    linear-gradient(#f3f4f6 1px, transparent 1px) 0 50% / 100% 100% no-repeat,
-    linear-gradient(90deg, #f3f4f6 1px, transparent 1px) 50% 0 / 100% 100% no-repeat,
-    white;
+  background: white;
   touch-action: none;
+}
+
+/* The centre cross of a 田字格, for judging where a stroke starts and how far it reaches.
+   Underneath the ink and deaf to the pen, so they guide without getting in the way. */
+.box::before,
+.box::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.box::before {
+  top: 8px;
+  bottom: 8px;
+  left: 50%;
+  border-left: 1px dashed #d3d8e0;
+}
+
+.box::after {
+  left: 8px;
+  right: 8px;
+  top: 50%;
+  border-top: 1px dashed #d3d8e0;
 }
 
 .box.done {
@@ -441,6 +463,8 @@ h1 {
 }
 
 .target-node {
+  position: relative;
+  z-index: 1;
   width: 420px;
   height: 420px;
 }
