@@ -23,6 +23,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.Configure<TtsOptions>(builder.Configuration.GetSection(TtsOptions.SectionName));
 builder.Services.Configure<AiOptions>(builder.Configuration.GetSection(AiOptions.SectionName));
+builder.Services.Configure<Aros.Api.Backup.BackupOptions>(
+    builder.Configuration.GetSection(Aros.Api.Backup.BackupOptions.SectionName));
 builder.Services.AddMemoryCache();
 
 // 31 MB of character data, expanded once and shared, not once per request
@@ -47,6 +49,7 @@ builder.Services.AddScoped<VocabService>();
 builder.Services.AddScoped<Aros.Api.Grammar.GrammarService>();
 builder.Services.AddScoped<Aros.Api.Grammar.GrammarLibrary>();
 builder.Services.AddScoped<Aros.Api.Daily.DailyService>();
+builder.Services.AddScoped<Aros.Api.Backup.BackupService>();
 builder.Services.AddScoped<VocabImporter>();
 builder.Services.AddScoped<CourseState>();
 builder.Services.AddScoped<AiBudget>();

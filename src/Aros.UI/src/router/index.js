@@ -90,6 +90,14 @@ const routes = [
   // Old bookmark from when stats were listening-only
   { path: '/chinese-stats', redirect: '/stats/listening' },
   {
+    // Last in the list, so last in the sidebar: not study, but the thing that means a dead
+    // disk costs a machine rather than a year
+    path: '/backup',
+    name: 'backup',
+    component: () => import('@/views/backup/BackupView.vue'),
+    meta: { nav: true, label: 'Backup', icon: '💾' },
+  },
+  {
     path: '/chinese-listening/play',
     name: 'chinese-listening-play',
     component: () => import('@/views/chinese/ListeningGameView.vue'),
