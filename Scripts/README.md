@@ -63,13 +63,36 @@ thing it would do is drop it. `-Force` says do it anyway, and there is no undo.
 Snapshots are kept 14 daily, 8 weekly, 12 monthly. At roughly 20 MB a snapshot and restic
 storing only what changed between them, the whole history costs pennies a year.
 
+## What has to survive the machine
+
+A backup cannot contain the key to itself, so something has to live elsewhere. It is less than
+it looks:
+
+| | If this machine dies |
+|---|---|
+| The B2 keyID and applicationKey | Log into Backblaze and make new ones. |
+| The bucket name and endpoint | On the bucket's page. |
+| `RESTIC_PASSWORD` | **Gone. Nothing regenerates it, and the snapshots stay encrypted.** |
+
+So what belongs in a password manager is the Backblaze login and the passphrase — and the
+passphrase wants a copy on paper too, because a password manager that only synced to the dead
+computer has the same problem the backup was meant to solve.
+
+Everything else arrives with the restore. `appsettings.json` is in the snapshot, so the
+OpenAI and Narakeet keys come back without being typed.
+
 ## A new computer
 
 1. Install Postgres 17, Node and the .NET 9 SDK.
 2. Clone the repository, and put `restic.exe` at `C:\Aros\tools\restic.exe`.
-3. Write `C:\Aros\backup.env.ps1` as above.
+3. Write `C:\Aros\backup.env.ps1` as above. Do **not** run `restic init` — the repository
+   already exists, and init would make a second one beside it.
 4. `.\Scripts\restore.ps1 -Apply` — database, audio, certificate and settings.
 5. Install the services with NSSM, then commit once: the post-commit hook builds and deploys.
+
+If both machines are alive at once, snapshots are tagged by host and share storage, so nothing
+breaks — but they would be backing up two databases that have drifted apart, and nothing
+merges them. A replacement machine means retiring the old one.
 
 ## Checking it still works
 
