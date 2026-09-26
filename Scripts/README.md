@@ -60,6 +60,16 @@ three places, none of them in the repository:
 `-Apply` without `-Force` refuses to touch a database that already exists, because the first
 thing it would do is drop it. `-Force` says do it anyway, and there is no undo.
 
+Everything except that last line has a **Backup** page, at the foot of the sidebar: where
+things stand, take a snapshot, verify the stored data, fetch one to look at, delete the ones
+you are done with, and set the credentials. It runs these same scripts rather than repeating
+what they do.
+
+Putting a snapshot back is deliberately not a button there. A restore stops the API and drops
+the database, and a Windows service takes its children down with it, so a restore started from
+the page would kill itself halfway through. That one stays here, at a command line that
+outlives the thing being replaced.
+
 Snapshots are kept 14 daily, 8 weekly, 12 monthly. At roughly 20 MB a snapshot and restic
 storing only what changed between them, the whole history costs pennies a year.
 
