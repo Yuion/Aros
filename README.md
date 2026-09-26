@@ -138,3 +138,13 @@ When moving to Linux, replace:
 - nginx config path → `/etc/nginx/nginx.conf`
 - SSL cert path → update nginx.conf accordingly
 - PowerShell service commands → `systemctl start/stop/restart`
+
+---
+
+### Backups
+
+The repository rebuilds the program, not what it learned. The database, the paid-for audio
+and `appsettings.json` live only on this machine unless something copies them off it.
+`Scripts\backup.ps1` takes an encrypted snapshot of all three, `Scripts\restore.ps1` puts one
+back, and `Scripts\README.md` covers setting it up and bringing up a new computer from a
+snapshot.
