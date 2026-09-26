@@ -50,6 +50,7 @@ builder.Services.AddScoped<Aros.Api.Grammar.GrammarService>();
 builder.Services.AddScoped<Aros.Api.Grammar.GrammarLibrary>();
 builder.Services.AddScoped<Aros.Api.Daily.DailyService>();
 builder.Services.AddScoped<Aros.Api.Backup.BackupService>();
+builder.Services.AddScoped<Aros.Api.Writing.WritingService>();
 builder.Services.AddScoped<VocabImporter>();
 builder.Services.AddScoped<CourseState>();
 builder.Services.AddScoped<AiBudget>();

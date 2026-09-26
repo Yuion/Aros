@@ -59,6 +59,14 @@ const routes = [
     meta: { nav: true, label: 'Chinese Listening', icon: '👂' },
   },
   {
+    // Practice for the hand rather than the memory, so it sits with the trainers - but it
+    // records nothing the trainers read
+    path: '/writing',
+    name: 'writing',
+    component: () => import('@/views/writing/WritingView.vue'),
+    meta: { nav: true, label: 'Writing', icon: '✏️' },
+  },
+  {
     // A shell with one tab per kind of test — a new area is a new child route
     path: '/stats',
     component: () => import('@/views/stats/StatsLayout.vue'),

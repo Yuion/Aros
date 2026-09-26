@@ -170,6 +170,12 @@
                 </li>
               </ul>
 
+              <!-- Shown, never acted on: writing practice is its own page and changes nothing
+                   about when this word is next asked -->
+              <p v-if="word.writtenAttempts" class="written">
+                Written by hand {{ word.writtenAttempts }}×, {{ word.writtenClean }} without a mistake
+              </p>
+
               <div class="word-actions">
                 <button class="retire-btn" :disabled="retiring === word.id" @click="retire(word)">
                   {{ word.retiredAt ? 'Put back in rotation' : 'Retire as mastered' }}
@@ -832,6 +838,12 @@ h1 {
 .retire-btn:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+.written {
+  margin: 0.6rem 0 0;
+  font-size: 0.72rem;
+  color: #9ca3af;
 }
 
 .word-actions {

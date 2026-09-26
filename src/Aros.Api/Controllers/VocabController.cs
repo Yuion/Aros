@@ -20,7 +20,12 @@ public record DrillRequest(List<DrillItem>? Items);
 
 [ApiController]
 [Route("api/[controller]")]
-public class VocabController(AppDbContext db, VocabService vocab, VocabImporter dump, TtsService tts) : ControllerBase
+public class VocabController(
+    AppDbContext db,
+    VocabService vocab,
+    VocabImporter dump,
+    TtsService tts,
+    Aros.Api.Writing.WritingService writing) : ControllerBase
 {
     [HttpGet("words")]
     public async Task<IActionResult> Words([FromQuery] bool? needsReview, CancellationToken ct)
@@ -30,7 +35,11 @@ public class VocabController(AppDbContext db, VocabService vocab, VocabImporter 
 
         var words = await query.OrderBy(w => w.Characters).ToListAsync(ct);
 
-        return Ok(words.Select(Describe));
+        // Handwriting practice rides along on the row, because it is about these words - but it
+        // is only ever shown. Nothing below reads it, and no schedule has ever heard of it.
+        var written = await writing.SummaryAsync(ct);
+
+        return Ok(words.Select(word => Describe(word, written.GetValueOrDefault(word.Id))));
     }
 
     /// <summary>
@@ -54,7 +63,9 @@ public class VocabController(AppDbContext db, VocabService vocab, VocabImporter 
     /// library reports its modes: recognising 水 and producing it are different skills, and one
     /// merged score hides whichever of them is behind.
     /// </summary>
-    private static object Describe(VocabWord word)
+    private static object Describe(VocabWord word) => Describe(word, default);
+
+    private static object Describe(VocabWord word, (int Attempts, int Clean) written)
     {
         var directions = Enum.GetValues<VocabDirection>().Select(d => Direction(word, d)).ToList();
 
@@ -75,6 +86,8 @@ public class VocabController(AppDbContext db, VocabService vocab, VocabImporter 
             correct = word.Progress.Sum(p => p.CorrectCount),
             wrong = word.Progress.Sum(p => p.WrongCount),
             state = ItemState.Overall(word.RetiredAt, directions.Select(d => d.state)),
+            writtenAttempts = written.Attempts,
+            writtenClean = written.Clean,
             directions,
         };
     }

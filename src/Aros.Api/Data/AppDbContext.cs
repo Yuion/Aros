@@ -13,6 +13,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<VocabProgress> VocabProgress => Set<VocabProgress>();
     public DbSet<VocabAnswer> VocabAnswers => Set<VocabAnswer>();
 
+    /// <summary>Handwriting practice. Read by the writing page and nothing else — see the entity.</summary>
+    public DbSet<WritingAttempt> WritingAttempts => Set<WritingAttempt>();
+
     public DbSet<TutorSettings> TutorSettings => Set<TutorSettings>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<GrammarPoint> GrammarPoints => Set<GrammarPoint>();
@@ -53,6 +56,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasOne(a => a.VocabWord)
                   .WithMany()
                   .HasForeignKey(a => a.VocabWordId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<WritingAttempt>(entity =>
+        {
+            // The page asks "how has this word gone, per mode", so that is the index
+            entity.HasIndex(a => new { a.WordId, a.Mode });
+            entity.HasIndex(a => a.At);
+
+            entity.HasOne(a => a.Word)
+                  .WithMany()
+                  .HasForeignKey(a => a.WordId)
                   .OnDelete(DeleteBehavior.Cascade);
         });
 
