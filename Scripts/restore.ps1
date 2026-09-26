@@ -49,6 +49,18 @@ function Say([string] $message) {
     Write-Host "[restore] $message"
 }
 
+# Runs an external program without letting anything it prints to stderr end the script.
+#
+# PowerShell wraps a native command's stderr in an error record, and with the strict setting
+# above that record is fatal - but only when the streams are redirected, which is exactly what
+# happens when the Backup page runs this instead of a person. Every call below checks
+# $LASTEXITCODE for itself.
+function Native([scriptblock] $command) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $command } finally { $ErrorActionPreference = $previous }
+}
+
 if (-not (Test-Path $Secrets)) { Fail "No credentials at $Secrets." }
 . $Secrets
 if (-not (Test-Path $Restic))  { Fail "restic is not at $Restic." }
@@ -64,13 +76,13 @@ Say "Fetching snapshot $Snapshot..."
 # underneath the target - including a folder named C, carrying the drive root's permissions,
 # which the next run is then not allowed to delete. Asking for the subfolder lands its
 # contents at the target and leaves no such thing behind.
-$described = & $Restic snapshots $Snapshot --json | ConvertFrom-Json
+$described = Native { & $Restic snapshots $Snapshot --json } | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or -not $described) { Fail "No snapshot '$Snapshot' in the repository." }
 
 $taken = @($described)[0]
 $subpath = '/' + $taken.paths[0].Replace(':', '').Replace('\', '/')
 
-& $Restic restore "$($taken.short_id):$subpath" --target $To
+Native { & $Restic restore "$($taken.short_id):$subpath" --target $To }
 if ($LASTEXITCODE -ne 0) { Fail "restic restore exited $LASTEXITCODE." }
 
 $root = $To
@@ -108,8 +120,8 @@ $database = $Database
 $psqlArgs = @('-h', $parts['host'], '-p', $parts['port'], '-U', $parts['username'])
 
 try {
-    $exists = & "$bin\psql.exe" @psqlArgs -d postgres -tAc `
-        "SELECT 1 FROM pg_database WHERE datname = '$database'"
+    $exists = Native { & "$bin\psql.exe" @psqlArgs -d postgres -tAc `
+        "SELECT 1 FROM pg_database WHERE datname = '$database'" }
 
     if ($exists -eq '1' -and -not $Force) {
         Fail "The database '$database' already exists. Re-run with -Force to drop and replace it."
@@ -124,16 +136,16 @@ try {
 
     if ($exists -eq '1') {
         Say "Dropping $database..."
-        & "$bin\psql.exe" @psqlArgs -d postgres -c "DROP DATABASE $database WITH (FORCE)"
+        Native { & "$bin\psql.exe" @psqlArgs -d postgres -c "DROP DATABASE $database WITH (FORCE)" }
         if ($LASTEXITCODE -ne 0) { Fail "Could not drop $database." }
     }
 
     Say "Creating $database..."
-    & "$bin\psql.exe" @psqlArgs -d postgres -c "CREATE DATABASE $database"
+    Native { & "$bin\psql.exe" @psqlArgs -d postgres -c "CREATE DATABASE $database" }
     if ($LASTEXITCODE -ne 0) { Fail "Could not create $database." }
 
     Say 'Restoring the dump...'
-    & "$bin\pg_restore.exe" @psqlArgs -d $database --no-owner "$root\db\aros.dump"
+    Native { & "$bin\pg_restore.exe" @psqlArgs -d $database --no-owner "$root\db\aros.dump" }
     if ($LASTEXITCODE -ne 0) { Fail "pg_restore exited $LASTEXITCODE." }
 
     if (Test-Path "$root\media") {

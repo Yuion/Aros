@@ -47,6 +47,18 @@ function Say([string] $message) {
     Write-Host "[backup] $message"
 }
 
+# Runs an external program without letting anything it prints to stderr end the script.
+#
+# PowerShell wraps a native command's stderr in an error record, and with the strict setting
+# above that record is fatal - but only when the streams are redirected, which is exactly what
+# happens when the Backup page runs this instead of a person. Every call below checks
+# $LASTEXITCODE for itself, so the strictness buys nothing here and costs a working backup.
+function Native([scriptblock] $command) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $command } finally { $ErrorActionPreference = $previous }
+}
+
 # ---------------------------------------------------------------- credentials
 if (-not (Test-Path $Secrets)) {
     Fail "No credentials at $Secrets. See Scripts\README.md for what belongs in it."
@@ -88,8 +100,8 @@ try {
     $env:PGPASSWORD = $parts['password']
 
     Say "Dumping $($parts['database'])..."
-    & $pgDump -h $parts['host'] -p $parts['port'] -U $parts['username'] `
-        -d $parts['database'] -Fc -f "$Staging\db\aros.dump"
+    Native { & $pgDump -h $parts['host'] -p $parts['port'] -U $parts['username'] `
+        -d $parts['database'] -Fc -f "$Staging\db\aros.dump" }
     if ($LASTEXITCODE -ne 0) { Fail "pg_dump exited $LASTEXITCODE." }
 
     $env:PGPASSWORD = $null
@@ -99,8 +111,10 @@ try {
     Copy-Item $Settings "$Staging\config\appsettings.json" -Force
 
     # What a restore is looking at, in case it is being read a year from now by someone who
-    # has forgotten what was in the box
-    $commit = (& git -C $repo rev-parse --short HEAD 2>$null)
+    # has forgotten what was in the box. The deployed copy of this script does not sit in a
+    # clone, so there is often no commit to name and that is not a problem worth failing over.
+    $commit = Native { & git -C $repo rev-parse --short HEAD 2>$null }
+    if ($LASTEXITCODE -ne 0 -or -not $commit) { $commit = 'unknown' }
     $clips  = (Get-ChildItem "$Staging\media" -Recurse -File -ErrorAction SilentlyContinue).Count
 
     @(
@@ -113,12 +127,12 @@ try {
     ) | Set-Content "$Staging\MANIFEST.txt" -Encoding utf8
 
     Say 'Uploading...'
-    & $Restic backup $Staging --tag aros --host aros
+    Native { & $Restic backup $Staging --tag aros --host aros }
     if ($LASTEXITCODE -ne 0) { Fail "restic backup exited $LASTEXITCODE." }
 
     Say 'Trimming old snapshots...'
-    & $Restic forget --tag aros --keep-daily $KeepDaily --keep-weekly $KeepWeekly `
-        --keep-monthly $KeepMonthly --prune
+    Native { & $Restic forget --tag aros --keep-daily $KeepDaily --keep-weekly $KeepWeekly `
+        --keep-monthly $KeepMonthly --prune }
     if ($LASTEXITCODE -ne 0) { Fail "restic forget exited $LASTEXITCODE." }
 
     Say 'Done.'
