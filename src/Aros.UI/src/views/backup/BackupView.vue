@@ -73,9 +73,26 @@
             <span class="id">{{ snapshot.id }}</span>
             <span class="taken">{{ when(snapshot.takenAt) }}</span>
             <span class="bytes">{{ size(snapshot.bytes) }}</span>
-            <button class="ghost" :disabled="working" @click="fetch(snapshot)">
-              {{ busyWith === snapshot.id ? 'Fetching…' : 'Fetch to look at' }}
-            </button>
+
+            <!-- Asked in the row rather than in a dialog, so the date it is about stays visible -->
+            <template v-if="condemned === snapshot.id">
+              <span class="asking">
+                {{ status.snapshots.length === 1
+                  ? 'The only one there is. Delete it anyway?'
+                  : 'Delete it? There is no undo.' }}
+              </span>
+              <button class="danger" :disabled="working" @click="forget(snapshot)">
+                {{ busyWith === snapshot.id ? 'Deleting…' : 'Delete' }}
+              </button>
+              <button class="ghost" :disabled="working" @click="condemned = ''">Keep</button>
+            </template>
+
+            <template v-else>
+              <button class="ghost" :disabled="working" @click="fetch(snapshot)">
+                {{ busyWith === snapshot.id ? 'Fetching…' : 'Fetch to look at' }}
+              </button>
+              <button class="ghost" :disabled="working" @click="condemned = snapshot.id">Delete</button>
+            </template>
           </li>
         </ul>
 
@@ -163,6 +180,9 @@ const outputOk = ref(true)
 
 /** The command below names whichever snapshot you last looked at, not always the newest. */
 const fetched = ref('')
+
+/** The one the row is currently asking about. Cleared by keeping it, or by deleting it. */
+const condemned = ref('')
 const named = computed(() => fetched.value || latest.value?.id || 'latest')
 
 const form = reactive({ repository: '', keyId: '', passphrase: '', applicationKey: '' })
@@ -227,6 +247,33 @@ async function fetch(snapshot) {
     output.value = []
   } finally {
     busyWith.value = ''
+  }
+}
+
+/**
+ * Gone for good, and the space with it. Confirmed once in the row above; the only snapshot
+ * there is needs the extra nod, which the API asks for rather than trusting the page to.
+ */
+async function forget(snapshot) {
+  const last = status.value.snapshots.length === 1
+
+  busyWith.value = snapshot.id
+  output.value = [`Deleting ${snapshot.id}…`]
+  error.value = ''
+
+  try {
+    const result = await api.delete(`/backup/snapshots/${snapshot.id}?force=${last}`)
+    outputOk.value = result.ok
+    output.value = result.output.length ? result.output : [result.ok ? 'Deleted.' : 'Failed.']
+
+    if (result.ok && fetched.value === snapshot.id) fetched.value = ''
+    status.value = await api.get('/backup/status')
+  } catch (e) {
+    error.value = e.message
+    output.value = []
+  } finally {
+    busyWith.value = ''
+    condemned.value = ''
   }
 }
 
@@ -441,9 +488,10 @@ h1 {
   padding: 0;
 }
 
+/* Flex rather than a grid of fixed columns: a row asking whether to delete carries two extra
+   things, and a grid would have to be told about both */
 .snapshots li {
-  display: grid;
-  grid-template-columns: 5.5rem 1fr auto auto;
+  display: flex;
   align-items: center;
   gap: 0.75rem;
   padding: 0.5rem 0;
@@ -451,9 +499,37 @@ h1 {
   font-size: 0.82rem;
 }
 
+.taken {
+  flex: 1;
+}
+
+.asking {
+  color: #b91c1c;
+  font-size: 0.76rem;
+}
+
+.danger {
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  cursor: pointer;
+  background: #b91c1c;
+  border: 1px solid #b91c1c;
+  color: white;
+}
+
+.danger:hover:not(:disabled) { background: #991b1b; }
+
+.danger:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .snapshots li:last-child { border-bottom: none; }
 
 .id {
+  flex: 0 0 5.5rem;
   font-family: ui-monospace, Consolas, monospace;
   color: #6b7280;
 }

@@ -62,6 +62,17 @@ public class BackupController(BackupService backup) : ControllerBase
     }
 
     /// <summary>
+    /// Deletes one snapshot and reclaims its space. Irreversible, and refused for the last one
+    /// unless force is passed - the page asks before either.
+    /// </summary>
+    [HttpDelete("snapshots/{snapshot}")]
+    public async Task<IActionResult> Forget(string snapshot, [FromQuery] bool force, CancellationToken ct)
+    {
+        var result = await backup.ForgetAsync(snapshot, force, ct);
+        return Ok(new { ok = result.Ok, output = result.Output });
+    }
+
+    /// <summary>
     /// Fetches a snapshot to look at, changing nothing.
     ///
     /// Putting one back is not offered here, and that is a decision rather than an omission. A

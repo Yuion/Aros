@@ -176,6 +176,41 @@ public partial class BackupService(
         };
     }
 
+    /// <summary>
+    /// Forgets one snapshot and reclaims the space it was holding.
+    ///
+    /// There is no undo and no recycle bin: restic removes the snapshot and then deletes the
+    /// packs nothing else refers to. The id is checked against the repository first, so a typo
+    /// is a refusal rather than a surprise, and the last remaining snapshot needs <paramref
+    /// name="force"/> - deleting it leaves nothing stored anywhere at all.
+    /// </summary>
+    public async Task<RunResult> ForgetAsync(string snapshot, bool force, CancellationToken ct)
+    {
+        if (!await Gate.WaitAsync(0, ct))
+            return new RunResult(false, ["Something else is running."]);
+
+        try
+        {
+            var stored = await SnapshotsAsync(ct);
+
+            if (stored.All(s => !s.Id.Equals(snapshot, StringComparison.OrdinalIgnoreCase)))
+                return new RunResult(false, [$"There is no snapshot {snapshot} in the repository."]);
+
+            if (stored.Count == 1 && !force)
+                return new RunResult(false,
+                [
+                    "That is the only snapshot there is. Deleting it leaves nothing stored anywhere.",
+                ]);
+
+            log.LogInformation("Forgetting snapshot {Snapshot}", snapshot);
+            return await ResticAsync(["forget", snapshot, "--prune"], ct);
+        }
+        finally
+        {
+            Gate.Release();
+        }
+    }
+
     /// <summary>Verifies the stored data itself, not just that the index lists it.</summary>
     public Task<RunResult> VerifyAsync(CancellationToken ct) =>
         ResticAsync(["check", "--read-data-subset=10%"], ct);
