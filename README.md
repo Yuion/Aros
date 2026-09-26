@@ -238,10 +238,10 @@ clone on a new computer starts blank.
 
 `Scripts\backup.ps1` takes an encrypted snapshot of all of it to a restic repository — client
 side, before anything is uploaded, because that archive carries both API keys.
-`Scripts\restore.ps1` puts one back, either to inspect or onto a bare machine. A scheduled task
-runs the backup nightly, and the **Backup** page at the foot of the sidebar shows where things
-stand, takes a snapshot, verifies the stored data, fetches one to look at and deletes the ones
-you are done with.
+`Scripts\restore.ps1` puts one back, either to inspect or onto a bare machine. Nothing runs on a
+schedule: the **Backup** page at the foot of the sidebar takes a snapshot when you ask for one,
+and also shows how old the newest is, verifies the stored data, fetches one to look at and
+deletes the ones you are done with.
 
 `Scripts\README.md` has the setup, the new-computer procedure, and which secrets must live
 somewhere other than this machine.

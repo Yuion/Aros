@@ -39,15 +39,19 @@ three places, none of them in the repository:
    C:\Aros\tools\restic.exe init
    ```
 
-4. **Schedule it.** Daily, whenever the machine is reliably on:
+Nothing runs on a schedule. Snapshots are taken deliberately — from the Backup page or from a
+terminal — which means the newest one is only as new as the last time you thought to take one.
+The page says how old it is, and turns amber after a day and red after three.
 
-   ```powershell
-   $action  = New-ScheduledTaskAction -Execute 'powershell.exe' `
-       -Argument '-NonInteractive -ExecutionPolicy Bypass -File "C:\Kram\repos\MyProject\Aros\Scripts\backup.ps1"'
-   $trigger = New-ScheduledTaskTrigger -Daily -At 03:00
-   Register-ScheduledTask -TaskName 'Aros backup' -Action $action -Trigger $trigger `
-       -RunLevel Highest -User $env:USERNAME
-   ```
+If you ever want it automatic after all:
+
+```powershell
+$action  = New-ScheduledTaskAction -Execute 'powershell.exe' `
+    -Argument '-NonInteractive -ExecutionPolicy Bypass -File "C:\Kram\repos\MyProject\Aros\Scripts\backup.ps1"'
+$trigger = New-ScheduledTaskTrigger -Daily -At 03:00
+Register-ScheduledTask -TaskName 'Aros backup' -Action $action -Trigger $trigger `
+    -RunLevel Highest -User $env:USERNAME
+```
 
 ## Using it
 
@@ -70,8 +74,11 @@ the database, and a Windows service takes its children down with it, so a restor
 the page would kill itself halfway through. That one stays here, at a command line that
 outlives the thing being replaced.
 
-Snapshots are kept 14 daily, 8 weekly, 12 monthly. At roughly 20 MB a snapshot and restic
-storing only what changed between them, the whole history costs pennies a year.
+Each run trims the history afterwards: the **last 10** whenever they were taken, then one a day
+for 14 days, one a week for 8 weeks, one a month for 12 months. The last-10 rule is the one
+that matters for snapshots taken by hand — a daily rule on its own would keep only the later of
+a before-and-after pair, which is exactly the pair you wanted. At roughly 20 MB a snapshot, and
+restic storing only what changed between them, the whole history costs pennies a year.
 
 ## What has to survive the machine
 

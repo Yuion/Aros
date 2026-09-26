@@ -23,8 +23,10 @@ param(
     [string] $Restic   = 'C:\Aros\tools\restic.exe',
     [string] $Secrets  = 'C:\Aros\backup.env.ps1',
 
-    # Kept because the last fortnight is what you actually restore from, and the older ones are
-    # there for the mistake you do not notice the same day
+    # Snapshots are taken by hand, so the last few matter most: one before trying something and
+    # one after is a pair worth having, and a daily rule alone would keep only the later of the
+    # two. The rest is there for the mistake you do not notice the same day.
+    [int] $KeepLast    = 10,
     [int] $KeepDaily   = 14,
     [int] $KeepWeekly  = 8,
     [int] $KeepMonthly = 12
@@ -131,8 +133,8 @@ try {
     if ($LASTEXITCODE -ne 0) { Fail "restic backup exited $LASTEXITCODE." }
 
     Say 'Trimming old snapshots...'
-    Native { & $Restic forget --tag aros --keep-daily $KeepDaily --keep-weekly $KeepWeekly `
-        --keep-monthly $KeepMonthly --prune }
+    Native { & $Restic forget --tag aros --keep-last $KeepLast --keep-daily $KeepDaily `
+        --keep-weekly $KeepWeekly --keep-monthly $KeepMonthly --prune }
     if ($LASTEXITCODE -ne 0) { Fail "restic forget exited $LASTEXITCODE." }
 
     Say 'Done.'

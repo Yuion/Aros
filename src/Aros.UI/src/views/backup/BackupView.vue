@@ -53,8 +53,10 @@
         </div>
 
         <p class="aside">
-          A nightly task takes one at 03:00. Verifying downloads a tenth of the stored packs and
-          checks them against their hashes — a backup nobody has read back is a guess.
+          Nothing takes one on a schedule — snapshots happen when you press the button, so the
+          count above is the age of the newest thing you could get back. Verifying downloads a
+          tenth of the stored packs and checks them against their hashes; a backup nobody has
+          read back is a guess.
         </p>
 
         <pre v-if="output.length" class="output" :class="{ failed: !outputOk }">{{ output.join('\n') }}</pre>
