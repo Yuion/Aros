@@ -21,6 +21,22 @@
         </RouterLink>
       </li>
     </ul>
+
+    <!-- Pushed to the bottom rather than queued after the last trainer: it is not somewhere
+         you go to study, and sitting under Stats made it look as though it were -->
+    <ul v-if="footRoutes.length" class="nav-list foot">
+      <li v-for="item in footRoutes" :key="item.path">
+        <RouterLink
+          :to="item.path"
+          class="nav-item"
+          :class="{ active: route.path.startsWith(item.path) }"
+          @click="$emit('close')"
+        >
+          <span class="nav-icon">{{ item.meta.icon }}</span>
+          <span class="nav-label">{{ item.meta.label }}</span>
+        </RouterLink>
+      </li>
+    </ul>
   </nav>
 </template>
 
@@ -32,7 +48,8 @@ defineEmits(['close'])
 
 const route = useRoute()
 const router = useRouter()
-const navRoutes = router.getRoutes().filter(r => r.meta?.nav)
+const navRoutes = router.getRoutes().filter(r => r.meta?.nav && !r.meta.foot)
+const footRoutes = router.getRoutes().filter(r => r.meta?.nav && r.meta.foot)
 </script>
 
 <style scoped>
@@ -107,6 +124,13 @@ const navRoutes = router.getRoutes().filter(r => r.meta?.nav)
   list-style: none;
   padding: 0.75rem 0;
   flex: 1;
+}
+
+/* The one that takes only the room it needs, at the end of the space the first one claimed */
+.nav-list.foot {
+  flex: 0 0 auto;
+  padding: 0.5rem 0 0.75rem;
+  border-top: 1px solid #313244;
 }
 
 .nav-item {

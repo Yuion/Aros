@@ -95,7 +95,7 @@ const routes = [
     path: '/backup',
     name: 'backup',
     component: () => import('@/views/backup/BackupView.vue'),
-    meta: { nav: true, label: 'Backup', icon: '💾' },
+    meta: { nav: true, foot: true, label: 'Backup', icon: '💾' },
   },
   {
     path: '/chinese-listening/play',
