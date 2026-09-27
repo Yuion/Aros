@@ -107,14 +107,11 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
                     : "Every sentence you can be asked here is mastered. Add new ones in Chinese TTS.");
         }
 
-        // An item never asked in this mode is new, not overdue
-        var intake = SessionBudget.RemainingIntake(await IntroducedTodayAsync(mode, ct));
-        askable = SessionBudget.WithIntake(askable, clip => Stat(clip, mode) is null, intake);
-
-        if (askable.Count == 0)
-            throw new ListeningException(
-                $"Today's {SessionBudget.NewPerDay} new sentences are done. The rest are waiting for tomorrow.");
-
+        // No intake limit here, and that is the point of starting this round rather than the
+        // daily one. The six-a-day cap exists so an evening's work stays a fixed size; asking
+        // for listening practice on purpose is asking for listening practice, and it should
+        // reach every sentence that is neither retired nor resting. The cap had left 53 of 65
+        // sentences unheard in Ordering while the trainer offered rounds of eight.
         var wanted = sweep ? askable.Count : Math.Clamp(questionCount, 1, askable.Count);
         var answers = PickWeighted(
             askable, mode, SessionBudget.Cap(wanted, SessionBudget.Listening), await RecentMissesAsync(mode, ct));
@@ -533,13 +530,12 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
 
         var tallies = new List<Availability>();
 
+        // What the ladder says, and nothing else. This drives the start button on the listening
+        // page, which now draws on everything unretired and not resting, so the count it shows is
+        // the plain one. The daily planner has its own view of the same modes - StandingAsync -
+        // and that one still answers "how much of this is today's share".
         foreach (var mode in Asked)
-        {
-            // What the ladder says, then what the day's intake actually allows — a page that
-            // promises sixty-nine and then refuses to start is lying about one of the two
-            var allowance = SessionBudget.RemainingIntake(await IntroducedTodayAsync(mode, ct));
-            tallies.Add(Tally(Eligible(clips, mode, audible), mode).WithIntake(allowance));
-        }
+            tallies.Add(Tally(Eligible(clips, mode, audible), mode));
 
         return tallies;
     }

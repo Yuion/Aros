@@ -43,15 +43,10 @@
     <p v-if="loading" class="note">Checking your library…</p>
 
     <!-- Nothing to draw, and why -->
-    <p v-else-if="!ready" class="note" :class="selected.resting || selected.held ? 'resting' : 'warn'">
-      <!-- New sentences arrive at a lesson's pace, not a library's -->
-      <template v-if="selected.heldBack">
-        Today's new sentences are done — {{ selected.held }} more start tomorrow.
-        <template v-if="selected.resting">
-          {{ selected.resting }} are resting, next due {{ selected.nextDue }}.
-        </template>
-      </template>
-      <template v-else-if="selected.resting">
+    <!-- No "come back tomorrow" here any more: asking for listening practice on purpose reaches
+         every sentence that is not retired or resting, and only the rests can turn it away -->
+    <p v-else-if="!ready" class="note" :class="selected.resting ? 'resting' : 'warn'">
+      <template v-if="selected.resting">
         Every sentence in this mode is resting — {{ selected.resting }} waiting, next due
         {{ selected.nextDue }}. Try another mode, or come back then.
       </template>
@@ -77,8 +72,7 @@
     <p v-else class="note">
       {{ selected.ready }} of {{ selected.total }} sentences ready in this mode<template
         v-if="selected.resting"
-      >, {{ selected.resting }} resting</template
-      ><template v-if="selected.held">, {{ selected.held }} starting tomorrow</template>.
+      >, {{ selected.resting }} resting</template>.
     </p>
 
     <section class="homophones">
