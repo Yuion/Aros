@@ -85,6 +85,9 @@ What each section is for, and what happens without it:
 | `Ai:FallbackModel` | no | used only when the primary answers "model not found", so a rename survives |
 | `Ai:DailyTokenBudget`, `Ai:MaxRequestsPerHour` | no | these bound a *bug* — a retry storm, a loop — rather than a stranger; the service is closed, so nobody else can spend it |
 
+`Syllabus:Level` is the HSK level the tutor works towards, default 1. The word list for every
+level ships with the API, so raising the goal is this one number.
+
 `Tts:Voice`, `Tts:MediaPath` (default `C:\Aros\media\tts`) and the `Backup` section all have
 working defaults and are only worth setting to move something off its usual path.
 

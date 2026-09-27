@@ -18,7 +18,7 @@ namespace Aros.Api.Tutor;
 /// learner knows, where they are weakest, what is being worked on, and how they want to be taught.
 /// The rest stays in the database, where it can be read when it is wanted.
 /// </summary>
-public class CourseState(AppDbContext db)
+public class CourseState(AppDbContext db, Aros.Api.Syllabus.SyllabusService syllabus)
 {
     /// <summary>Above this many words, the inventory gives way to counts and the parts that steer.</summary>
     public const int FullListLimit = 250;
@@ -50,6 +50,7 @@ public class CourseState(AppDbContext db)
         if (review > 0) text.AppendLine($"  {review} more await review and must not be used yet.");
 
         AppendAccuracy(text, words);
+        AppendSyllabus(text, await syllabus.ProgressAsync(ct));
         AppendTargets(text, weak, rules);
 
         text.AppendLine();
@@ -65,6 +66,34 @@ public class CourseState(AppDbContext db)
         AppendInventory(text, words, grammar, rules);
 
         return text.ToString().TrimEnd();
+    }
+
+    /// <summary>
+    /// The list the course is working towards, and how much of it is left.
+    ///
+    /// Named words rather than a number, because a number is something to agree with and a list
+    /// is something to teach from. Ordered by how common each word is, so the next lesson reaches
+    /// for the ones that carry the most sentences rather than the ones the syllabus happens to
+    /// print first.
+    /// </summary>
+    private static void AppendSyllabus(StringBuilder text, Aros.Api.Syllabus.SyllabusProgress progress)
+    {
+        if (progress.Total == 0) return;
+
+        text.AppendLine();
+        text.AppendLine($"SYLLABUS — HSK{progress.Level}, the goal of this course");
+        text.AppendLine($"  {progress.Taught} of {progress.Total} words taught, {progress.Total - progress.Taught} to go.");
+
+        if (progress.NextUp.Count > 0)
+        {
+            text.AppendLine("  Next, commonest first — new vocabulary comes from here:");
+            text.AppendLine($"    {string.Join("  ", progress.NextUp.Select(w => $"{w.Word} ({w.Pinyin})"))}");
+        }
+
+        if (progress.OffList.Count > 0)
+            text.AppendLine(
+                $"  {progress.OffList.Count} words already taught are not on the list. "
+                + "That is the count to stop growing, not a target.");
     }
 
     /// <summary>
