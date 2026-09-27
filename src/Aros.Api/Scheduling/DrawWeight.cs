@@ -16,8 +16,22 @@ public static class DrawWeight
     /// <summary>The weight never reaches zero — the rest schedule, not the weight, retires an item.</summary>
     public const double Floor = 0.25;
 
-    /// <summary>Never practiced — fully due.</summary>
-    public const double Unseen = 1.0;
+    /// <summary>
+    /// Never practised. Deliberately heavier than anything you have got right and lighter than
+    /// anything you are currently getting wrong, which places it exactly where it belongs in the
+    /// order a round is filled:
+    ///
+    ///   freshly missed   (1 + 1)^1.5 = 2.83, and up from there
+    ///   NEVER PRACTISED  2.00
+    ///   due, clean       1.00, falling to <see cref="Floor"/> as the streak grows
+    ///
+    /// It used to be 1.0 — the same as a clean sentence that happened to be due — so an item
+    /// nobody had ever seen queued behind everything on equal terms and a backlog could sit
+    /// there for weeks. A miss still outranks it, because a thing you are getting wrong is more
+    /// urgent than a thing you have not met; but a stale miss decays (see <see cref="MissTally"/>)
+    /// and drops back below, which is the right way round.
+    /// </summary>
+    public const double Unseen = 2.0;
 
     /// <summary>
     /// How sharply misses raise the weight. Linear was too flat once rounds were capped: an item
