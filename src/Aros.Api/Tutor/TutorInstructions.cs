@@ -81,9 +81,6 @@ public static class TutorInstructions
         - chinese_to_english — show it was understood.
         - pinyin — the reading, tones included.
         - tone — the tones alone, for a sentence already read.
-        - error_correction — a wrong sentence to find and fix. Say what is wrong, not just what
-          is right; write the faulty sentence yourself, using a mistake this learner plausibly
-          makes.
         - transformation — statement to question, positive to negative, add 也.
         - constrained — the same idea again under a restriction: using 要, without 想.
         - answer_in_chinese — a question asked in Chinese and answered in Chinese. The answer is

@@ -27,6 +27,11 @@ public static class TurnSchema
     /// to translate: of 47 exercises set before this list existed, all but one were
     /// english_to_chinese or pinyin. A closed list is the only thing that makes the other shapes
     /// visible to the model at the moment it chooses one.
+    ///
+    /// error_correction was removed. In practice the instruction line gave the fault away - "each
+    /// sentence is wrong because it uses 了 after 没有" leaves nothing to find, only a deletion to
+    /// perform - and a version that withheld it would be a guessing game instead. Seven were set;
+    /// none of them taught anything.
     /// </summary>
     public static readonly string[] ExerciseTypes =
     [
@@ -34,7 +39,6 @@ public static class TurnSchema
         "chinese_to_english",       // show you understood it
         "pinyin",                   // write the reading, tones included
         "tone",                     // the tones alone, for a sentence already read
-        "error_correction",         // here is a wrong sentence; say what is wrong and fix it
         "transformation",           // statement to question, positive to negative, add 也
         "constrained",              // say it again, but using 要 / without 想
         "answer_in_chinese",        // a question asked in Chinese, answered in Chinese

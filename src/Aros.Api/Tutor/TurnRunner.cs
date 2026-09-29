@@ -270,10 +270,6 @@ public class TurnRunner(
 
         if (kind.Contains("to_english") || kind.Contains("pinyin") || kind.Contains("tone")) return false;
 
-        // Correcting a sentence means saying what is wrong with it, and a bank of the right
-        // characters would give that away before the learner has looked
-        if (kind.Contains("error_correction")) return false;
-
         // Falls back to the answers themselves: if they are Chinese, the learner must write Chinese
         return items.Any(i => i.ExpectedAnswer.Any(c => c >= 0x4E00 && c <= 0x9FFF));
     }

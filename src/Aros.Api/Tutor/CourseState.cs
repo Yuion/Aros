@@ -51,7 +51,7 @@ public class CourseState(AppDbContext db, Aros.Api.Syllabus.SyllabusService syll
 
         AppendAccuracy(text, words);
         AppendSyllabus(text, await syllabus.ProgressAsync(ct));
-        AppendTargets(text, weak, rules);
+        AppendRules(text, rules);
 
         text.AppendLine();
         text.AppendLine("CURRENT LESSON");
@@ -132,36 +132,25 @@ public class CourseState(AppDbContext db, Aros.Api.Syllabus.SyllabusService syll
     private static string Line(VocabDirection direction, double accuracy, int answered) =>
         string.Create(CultureInfo.InvariantCulture, $"{Label(direction)}: {accuracy * 100:0}% of {answered}");
 
-    /// <summary>How many weak points are worth naming at all. See the note below.</summary>
-    private const int TargetsShown = 3;
-
     /// <summary>
-    /// The handful of things worth keeping half an eye on — not a to-do list.
+    /// The pronunciation rules most recently taught, so a lesson does not contradict one.
     ///
-    /// Every open weakness used to be listed, and eight of them read as an agenda: three lessons
-    /// in a row went by drilling them and teaching nothing. The trainers drill weaknesses better
-    /// and without spending an hour of tutoring on it, so the three worst are named as background
-    /// and the rest are left where they are already being worked.
+    /// Open weaknesses used to be listed here too, first as a full list, then as the three worst
+    /// under a heading telling the model not to build a lesson on them. Both versions leaked:
+    /// naming a weakness to something whose job is to help is an instruction to fix it, however
+    /// the line around it is worded. They are still recorded, still shown on the stats page, and
+    /// still closed by the trainers - they are simply no longer put in front of the tutor, whose
+    /// job is the next thing you do not know yet.
     /// </summary>
-    private static void AppendTargets(StringBuilder text, List<WeakPoint> weak, List<PronunciationRule> rules)
+    private static void AppendRules(StringBuilder text, List<PronunciationRule> rules)
     {
-        var worst = weak
-            .OrderByDescending(w => w.Severity)
-            .ThenByDescending(w => w.LastSeen)
-            .Take(TargetsShown)
-            .Select(w => w.Target);
+        var newest = rules.OrderByDescending(r => r.IntroducedInLesson ?? 0).Take(2).Select(r => r.Title).ToList();
 
-        var newest = rules.OrderByDescending(r => r.IntroducedInLesson ?? 0).Take(2).Select(r => r.Title);
-        var targets = worst.Concat(newest).Distinct().ToList();
-
-        if (targets.Count == 0) return;
-
-        var hidden = Math.Max(0, weak.Count - TargetsShown);
+        if (newest.Count == 0) return;
 
         text.AppendLine();
-        text.AppendLine("CURRENT TARGETS (background — the trainers drill these; do not build a lesson on them)");
-        foreach (var target in targets) text.AppendLine($"  {target}");
-        if (hidden > 0) text.AppendLine($"  and {hidden} more, being drilled outside the lesson");
+        text.AppendLine("PRONUNCIATION RULES ALREADY TAUGHT (do not contradict these)");
+        foreach (var rule in newest) text.AppendLine($"  {rule}");
     }
 
     /// <summary>
