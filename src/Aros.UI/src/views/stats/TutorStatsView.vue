@@ -154,13 +154,24 @@
           misused in writing. Resolved ones are kept, so a weakness that returns reads as a
           relapse rather than a new problem.
         </p>
+        <p class="card-note">
+          Starting a lesson closes the ones the trainers have since disproved. One naming no
+          characters cannot be checked that way, so it waits for you to say so.
+          <button class="link" :disabled="sweeping" @click="sweep">
+            {{ sweeping ? 'Checking…' : 'Check them now' }}
+          </button>
+          <span v-if="swept !== null" class="swept">{{ swept }} closed.</span>
+        </p>
         <ul class="points">
           <li v-for="w in data.weakPoints" :key="w.target + w.type" :class="{ done: w.resolved }">
             <strong :lang="hasHan(w.target) ? 'zh' : undefined">{{ w.target }}</strong>
             <span class="status" :class="w.resolved ? 'learned' : 'shaky'">
               {{ w.resolved ? 'resolved' : `severity ${w.severity}` }}
             </span>
-            <p class="point-note">{{ w.type }} · first seen {{ day(w.firstSeen) }}</p>
+            <p class="point-note">
+              {{ w.type }} · first seen {{ day(w.firstSeen) }}
+              <button v-if="!w.resolved" class="link" @click="resolve(w)">I have this now</button>
+            </p>
           </li>
         </ul>
       </section>
@@ -226,6 +237,33 @@ function day(value) {
   return value ? String(value).slice(0, 10) : ''
 }
 
+const sweeping = ref(false)
+const swept = ref(null)
+
+/** Asks the trainers which open weaknesses they have disproved. Starting a lesson does this too. */
+async function sweep() {
+  sweeping.value = true
+  try {
+    const result = await api.post('/tutor/weak-points/sweep')
+    swept.value = result.resolved
+    data.value = await api.get('/stats/tutor')
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    sweeping.value = false
+  }
+}
+
+/** For the ones no trainer can settle - a tone heard wrong, a pattern misused aloud. */
+async function resolve(weak) {
+  try {
+    await api.delete(`/tutor/weak-points/${weak.id}`)
+    data.value = await api.get('/stats/tutor')
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
 onMounted(async () => {
   try {
     data.value = await api.get('/stats/tutor')
@@ -239,6 +277,28 @@ onMounted(async () => {
 
 <style scoped>
 @import '@/components/stats/area.css';
+
+.link {
+  font: inherit;
+  font-size: inherit;
+  padding: 0;
+  margin-left: 0.4rem;
+  border: none;
+  background: none;
+  color: #6d5bd0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link:disabled {
+  color: #9ca3af;
+  cursor: default;
+}
+
+.swept {
+  margin-left: 0.4rem;
+  color: #15803d;
+}
 
 .running {
   border-color: #bfdbfe;

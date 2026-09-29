@@ -61,6 +61,7 @@ builder.Services.AddScoped<TutorService>();
 builder.Services.AddScoped<CourseImporter>();
 builder.Services.AddScoped<LessonRecorder>();
 builder.Services.AddScoped<LessonRuntimeService>();
+builder.Services.AddScoped<WeakPointReview>();
 builder.Services.AddScoped<ExerciseGuard>();
 builder.Services.AddScoped<TurnRunner>();
 

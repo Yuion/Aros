@@ -166,7 +166,11 @@ const needsWorkRows = computed(() =>
   (data.value?.needsWork ?? []).map((row, i) => ({
     key: `${row.characters}-${row.direction}-${i}`,
     label: row.characters,
-    sublabel: DIRECTION_LABELS[row.direction] ?? row.direction,
+    // What you last typed for it, when there is one — the difference between a tone slipped and
+    // a word not known, which the score alone never said
+    sublabel: row.lastGiven
+      ? `${DIRECTION_LABELS[row.direction] ?? row.direction} · you wrote “${row.lastGiven}”`
+      : DIRECTION_LABELS[row.direction] ?? row.direction,
     lang: 'zh',
     ratio: row.accuracy,
     value: percent(row.accuracy),

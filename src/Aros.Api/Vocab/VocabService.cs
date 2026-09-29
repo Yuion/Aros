@@ -345,6 +345,7 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
                 VocabWordId = word.Id,
                 Direction = state.Direction,
                 Correct = correct,
+                Given = GivenAnswer.Tidy(text),
             });
             await db.SaveChangesAsync(ct);
         }

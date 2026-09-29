@@ -257,6 +257,19 @@ public class StatsController(
             .ToList();
 
         // The study list, so a word you have retired is off it
+        // The last thing actually typed for each of these, so the list says what went wrong and
+        // not merely that something did. Only wrong answers: a right one is not a mistake to read.
+        var slips = await db.VocabAnswers
+            .AsNoTracking()
+            .Where(a => !a.Correct && a.Given != null)
+            .OrderByDescending(a => a.AnsweredAt)
+            .Select(a => new { a.VocabWordId, a.Direction, a.Given })
+            .ToListAsync(ct);
+
+        var lastSlip = slips
+            .GroupBy(a => (a.VocabWordId, a.Direction))
+            .ToDictionary(g => g.Key, g => g.First().Given);
+
         var needsWork = rows
             .Where(r => r.Progress.WrongCount > 0 && r.Word.RetiredAt is null)
             .Select(r => new
@@ -268,6 +281,7 @@ public class StatsController(
                 correct = r.Progress.CorrectCount,
                 wrong = r.Progress.WrongCount,
                 accuracy = (double)r.Progress.CorrectCount / (r.Progress.CorrectCount + r.Progress.WrongCount),
+                lastGiven = lastSlip.GetValueOrDefault((r.Word.Id, r.Progress.Direction)),
             })
             .OrderBy(r => r.accuracy)
             .ThenByDescending(r => r.wrong)
@@ -576,6 +590,7 @@ public class StatsController(
                 .ThenByDescending(w => w.Severity)
                 .Select(w => new
                 {
+                    w.Id,
                     w.Target,
                     w.Type,
                     w.Severity,

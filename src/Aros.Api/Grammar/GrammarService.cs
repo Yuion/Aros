@@ -228,13 +228,13 @@ public class GrammarService(AppDbContext db, IMemoryCache cache)
         if (!state.Answered)
         {
             state.Answered = true;
-            await RecordAsync(item, correct, ct);
+            await RecordAsync(item, correct, GivenAnswer.Tidy(text), ct);
         }
 
         return new GrammarAnswerResult(correct, item.GrammarPointId, item.Point?.Title ?? "", item.Answer, note);
     }
 
-    private async Task RecordAsync(GrammarItem item, bool correct, CancellationToken ct)
+    private async Task RecordAsync(GrammarItem item, bool correct, string? given, CancellationToken ct)
     {
         var progress = await db.GrammarProgress.FirstOrDefaultAsync(p => p.GrammarPointId == item.GrammarPointId, ct);
 
@@ -262,6 +262,7 @@ public class GrammarService(AppDbContext db, IMemoryCache cache)
             GrammarPointId = item.GrammarPointId,
             GrammarItemId = item.Id,
             Correct = correct,
+            Given = given,
         });
 
         await db.SaveChangesAsync(ct);

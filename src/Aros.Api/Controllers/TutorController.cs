@@ -22,6 +22,7 @@ public class TutorController(
     LessonRecorder recorder,
     TurnRunner runner,
     LessonRuntimeService runtimeService,
+    WeakPointReview weakPoints,
     AiBudget budget,
     Microsoft.Extensions.Options.IOptions<AiOptions> options) : ControllerBase
 {
@@ -99,6 +100,11 @@ public class TutorController(
     [HttpPost("lesson/start")]
     public async Task<IActionResult> StartLesson([FromBody] StartLessonRequest request, CancellationToken ct)
     {
+        // Before the tutor is told what you are weak at, the trainers get to say which of those
+        // weaknesses they have since disproved. Otherwise a problem fixed a fortnight ago still
+        // shapes the lesson.
+        await weakPoints.SweepAsync(ct);
+
         var minutes = request.Minutes is { } m && m > 0 ? Math.Clamp(m, 5, 240) : (int?)null;
         var runtime = await runtimeService.ResetAsync(ct, minutes);
 
@@ -323,6 +329,14 @@ public class TutorController(
             return BadRequest(new { message = ex.Message });
         }
     }
+
+    /// <summary>
+    /// Ask the trainers which open weaknesses they have disproved. Runs when a lesson starts as
+    /// well; this is for when you want the list tidied without starting one.
+    /// </summary>
+    [HttpPost("weak-points/sweep")]
+    public async Task<IActionResult> SweepWeakPoints(CancellationToken ct) =>
+        Ok(new { resolved = await weakPoints.SweepAsync(ct) });
 
     [HttpDelete("weak-points/{id:int}")]
     public async Task<IActionResult> ResolveWeakPoint(int id, CancellationToken ct)

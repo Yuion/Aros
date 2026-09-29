@@ -13,11 +13,19 @@ namespace Aros.Api.Vocab;
 /// </summary>
 public static class TileBank
 {
-    /// <summary>Spare tiles beyond the answer's own, so the length of the answer gives nothing away.</summary>
-    private const int Extras = 3;
+    /// <summary>
+    /// Spare tiles beyond the answer's own, so the length of the answer gives nothing away.
+    ///
+    /// Raised from three. <see cref="Confusables"/> was already rewritten once to make these
+    /// distractors worth having, and the two character directions still ran at 99.4% and 99.1% —
+    /// so picking the right tiles is not failing because the wrong ones are poor, it is failing
+    /// because there are too few to choose between. A two-character answer used to stand among
+    /// five tiles; it now stands among nine.
+    /// </summary>
+    private const int Extras = 7;
 
-    private const int Fewest = 5;
-    private const int Most = 9;
+    private const int Fewest = 8;
+    private const int Most = 14;
 
     public static List<string> Build(VocabWord word, IEnumerable<VocabWord> pool)
     {

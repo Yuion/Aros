@@ -302,6 +302,7 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
                 TtsClipId = clip.Id,
                 Mode = state.Mode,
                 Correct = correct,
+                Given = GivenAnswer.Tidy(text),
             };
 
             db.ListeningAnswers.Add(record);
