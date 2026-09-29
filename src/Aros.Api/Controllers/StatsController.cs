@@ -15,6 +15,8 @@ public class StatsController(
     ListeningService listening,
     VocabService vocab,
     Aros.Api.Grammar.GrammarService grammar,
+    Aros.Api.Syllabus.SyllabusService syllabus,
+    Aros.Api.Tones.ToneService tones,
     Tutor.LessonRuntimeService runtimeService) : ControllerBase
 {
     private const int TrendDays = 30;
@@ -470,6 +472,7 @@ public class StatsController(
         var exercises = await db.Exercises.AsNoTracking().ToListAsync(ct);
 
         var runtime = await runtimeService.CurrentAsync(ct);
+        var progress = await syllabus.ProgressAsync(ct);
 
         var byCharacters = words
             .GroupBy(w => w.Characters)
@@ -570,13 +573,23 @@ public class StatsController(
                 weakResolved = weak.Count(w => w.Resolved),
             },
 
+            // Where the course stands against the list it is working towards, which is the one
+            // number that says whether the lessons are going anywhere
+            syllabus = new
+            {
+                level = progress.Level,
+                total = progress.Total,
+                taught = progress.Taught,
+                offList = progress.OffList.Count,
+                nextUp = progress.NextUp.Select(w => new { w.Word, w.Pinyin }).ToList(),
+            },
+
             // A lesson under way has not been written up yet, and that is worth saying plainly
-            inProgress = runtime.MinutesRequested is not null || runtime.ExercisesSentThisLesson.Count > 0
+            inProgress = runtime.StartedAt is not null || runtime.ExercisesSentThisLesson.Count > 0
                 ? new
                 {
                     lessonId = runtime.LessonId,
                     phase = runtime.Phase.ToString(),
-                    minutesRequested = runtime.MinutesRequested,
                     minutesElapsed = runtime.StartedAt is { } at ? (int)(DateTime.UtcNow - at).TotalMinutes : (int?)null,
                     exercisesSent = runtime.ExercisesSentThisLesson.Count,
                     newVocabulary = runtime.NewVocabularyThisLesson,
@@ -603,6 +616,200 @@ public class StatsController(
 
             lessons = chronicle,
         });
+    }
+
+    /// <summary>
+    /// The ear on its own. Nothing here is joined to the vocabulary tables on purpose — a tone
+    /// missed is a fact about hearing, not about whether a word is known — so this tab is built
+    /// from one table and says one thing: which tones you cannot tell apart.
+    /// </summary>
+    [HttpGet("tones")]
+    public async Task<IActionResult> Tones(CancellationToken ct)
+    {
+        var answers = await db.ToneAnswers.AsNoTracking()
+            .Select(a => new { a.Syllable, a.Tone, a.Given, a.Correct, a.DurationMs, a.At })
+            .ToListAsync(ct);
+
+        var standing = await tones.StandingAsync(ct);
+        var recentSince = DateTime.UtcNow.Date.AddDays(-(RecentDays - 1));
+        var recent = answers.Where(a => a.At >= recentSince).ToList();
+
+        var totals = new
+        {
+            sounds = standing.Sounds,
+            withAudio = standing.WithAudio,
+            syllables = standing.Sounds / 4,
+            answers = answers.Count,
+            accuracy = answers.Count == 0 ? (double?)null : (double)answers.Count(a => a.Correct) / answers.Count,
+            recentDays = RecentDays,
+            recentAnswered = recent.Count,
+            recentAccuracy = recent.Count == 0 ? (double?)null : (double)recent.Count(a => a.Correct) / recent.Count,
+
+            // How long it takes is the other half of "can you hear it". A tone worked out from
+            // the shape of the syllable after three seconds is not a tone heard.
+            medianMs = Median(answers.Where(a => a.DurationMs > 0).Select(a => a.DurationMs).ToList()),
+            trouble = recent.Where(a => !a.Correct).Select(a => (a.Syllable, a.Tone)).Distinct().Count(),
+        };
+
+        // Per tone as it was spoken: which of the four your ear does not catch
+        var byTone = Enumerable.Range(1, 4)
+            .Select(tone =>
+            {
+                var rows = answers.Where(a => a.Tone == tone).ToList();
+
+                return new
+                {
+                    tone,
+                    asked = rows.Count,
+                    correct = rows.Count(a => a.Correct),
+                    accuracy = rows.Count == 0 ? (double?)null : (double)rows.Count(a => a.Correct) / rows.Count,
+                };
+            })
+            .ToList();
+
+        // The whole grid, not just the top few: an empty cell is as informative as a full one
+        var confusions = answers
+            .Where(a => !a.Correct)
+            .GroupBy(a => (a.Tone, a.Given))
+            .OrderByDescending(g => g.Count())
+            .Select(g => new { heard = g.Key.Tone, said = g.Key.Given, times = g.Count() })
+            .ToList();
+
+        var hardest = answers
+            .GroupBy(a => (a.Syllable, a.Tone))
+            .Where(g => g.Any(a => !a.Correct))
+            .Select(g => new
+            {
+                syllable = g.Key.Syllable,
+                tone = g.Key.Tone,
+                asked = g.Count(),
+                wrong = g.Count(a => !a.Correct),
+                accuracy = (double)g.Count(a => a.Correct) / g.Count(),
+            })
+            .OrderBy(r => r.accuracy)
+            .ThenByDescending(r => r.wrong)
+            .Take(10)
+            .ToList();
+
+        var since = DateTime.UtcNow.Date.AddDays(-(TrendDays - 1));
+
+        var daily = answers
+            .Where(a => a.At >= since)
+            .GroupBy(a => DateOnly.FromDateTime(a.At.ToLocalTime()))
+            .OrderBy(g => g.Key)
+            .Select(g => new
+            {
+                date = g.Key.ToString("yyyy-MM-dd"),
+                answers = g.Count(),
+                correct = g.Count(a => a.Correct),
+                accuracy = (double)g.Count(a => a.Correct) / g.Count(),
+            })
+            .ToList();
+
+        return Ok(new { totals, byTone, confusions, hardest, daily, trendDays = TrendDays });
+    }
+
+    /// <summary>
+    /// Handwriting. Kept apart from every schedule for the reason the entity gives, so there is no
+    /// mastery here and no "ready now" — a character is never finished with. What it can say is
+    /// how clean the hand is, and whether it stays clean once the model is taken away.
+    /// </summary>
+    [HttpGet("writing")]
+    public async Task<IActionResult> Writing(CancellationToken ct)
+    {
+        var attempts = await db.WritingAttempts.AsNoTracking()
+            .Select(a => new { a.Character, a.Mode, a.Mistakes, a.Backwards, a.Strokes, a.DurationMs, a.At })
+            .ToListAsync(ct);
+
+        var recentSince = DateTime.UtcNow.Date.AddDays(-(RecentDays - 1));
+        var recent = attempts.Where(a => a.At >= recentSince).ToList();
+
+        object Mode(string mode)
+        {
+            var rows = attempts.Where(a => a.Mode == mode).ToList();
+            var strokes = rows.Sum(a => a.Strokes);
+
+            return new
+            {
+                mode,
+                attempts = rows.Count,
+                characters = rows.Select(a => a.Character).Distinct().Count(),
+                clean = rows.Count(a => a.Mistakes == 0),
+                cleanShare = rows.Count == 0 ? (double?)null : (double)rows.Count(a => a.Mistakes == 0) / rows.Count,
+
+                // Per stroke rather than per character: 鞋 has fifteen chances to go wrong and
+                // 人 has two, so mistakes per attempt would say the hard characters are the
+                // sloppy ones.
+                perStroke = strokes == 0 ? (double?)null : (double)rows.Sum(a => a.Mistakes) / strokes,
+                backwards = rows.Count(a => a.Backwards),
+                lastAt = rows.Count == 0 ? null : rows.Max(a => (DateTime?)a.At),
+            };
+        }
+
+        var totals = new
+        {
+            attempts = attempts.Count,
+            characters = attempts.Select(a => a.Character).Distinct().Count(),
+            clean = attempts.Count(a => a.Mistakes == 0),
+            cleanShare = attempts.Count == 0 ? (double?)null : (double)attempts.Count(a => a.Mistakes == 0) / attempts.Count,
+            recentDays = RecentDays,
+            recentAttempts = recent.Count,
+            recentCleanShare = recent.Count == 0
+                ? (double?)null
+                : (double)recent.Count(a => a.Mistakes == 0) / recent.Count,
+            backwards = attempts.Count(a => a.Backwards),
+            strokes = attempts.Sum(a => a.Strokes),
+            trouble = recent.Where(a => a.Mistakes > 0).Select(a => a.Character).Distinct().Count(),
+            medianMs = Median(attempts.Where(a => a.DurationMs > 0).Select(a => a.DurationMs).ToList()),
+        };
+
+        var modes = new[] { WritingMode.Memory, WritingMode.Copying }.Select(Mode).ToList();
+
+        var hardest = attempts
+            .GroupBy(a => a.Character)
+            .Where(g => g.Sum(a => a.Mistakes) > 0)
+            .Select(g => new
+            {
+                character = g.Key,
+                attempts = g.Count(),
+                clean = g.Count(a => a.Mistakes == 0),
+                mistakes = g.Sum(a => a.Mistakes),
+                perStroke = g.Sum(a => a.Strokes) == 0
+                    ? 0d
+                    : (double)g.Sum(a => a.Mistakes) / g.Sum(a => a.Strokes),
+                backwards = g.Count(a => a.Backwards),
+            })
+            .OrderByDescending(r => r.perStroke)
+            .ThenByDescending(r => r.mistakes)
+            .Take(10)
+            .ToList();
+
+        var since = DateTime.UtcNow.Date.AddDays(-(TrendDays - 1));
+
+        // Charted as the share written clean, which is the one line that moves with practice
+        var daily = attempts
+            .Where(a => a.At >= since)
+            .GroupBy(a => DateOnly.FromDateTime(a.At.ToLocalTime()))
+            .OrderBy(g => g.Key)
+            .Select(g => new
+            {
+                date = g.Key.ToString("yyyy-MM-dd"),
+                answers = g.Count(),
+                correct = g.Count(a => a.Mistakes == 0),
+                accuracy = (double)g.Count(a => a.Mistakes == 0) / g.Count(),
+            })
+            .ToList();
+
+        return Ok(new { totals, modes, hardest, daily, trendDays = TrendDays });
+    }
+
+    /// <summary>The middle value, which a handful of very slow answers cannot drag about.</summary>
+    private static int? Median(List<int> values)
+    {
+        if (values.Count == 0) return null;
+
+        values.Sort();
+        return values[values.Count / 2];
     }
 
     /// <summary>

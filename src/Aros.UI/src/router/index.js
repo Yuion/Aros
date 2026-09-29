@@ -96,6 +96,16 @@ const routes = [
         component: () => import('@/views/stats/GrammarStatsView.vue'),
       },
       {
+        path: 'tones',
+        name: 'stats-tones',
+        component: () => import('@/views/stats/TonesStatsView.vue'),
+      },
+      {
+        path: 'writing',
+        name: 'stats-writing',
+        component: () => import('@/views/stats/WritingStatsView.vue'),
+      },
+      {
         path: 'tutor',
         name: 'stats-tutor',
         component: () => import('@/views/stats/TutorStatsView.vue'),

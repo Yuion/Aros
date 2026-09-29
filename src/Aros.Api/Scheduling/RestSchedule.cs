@@ -55,8 +55,14 @@ public sealed record RestSchedule(int FirstRestStreak, IReadOnlyList<TimeSpan> R
         wrongCount > 0 ? VocabularyLapsed : VocabularyClean;
 
     /// <summary>
-    /// Listening, for a sentence never missed. Rests begin at the first correct answer and it is
-    /// mastered on the fifth — a sentence answered right five times running was never in doubt.
+    /// Listening, for a sentence never missed. Three rests and mastery on the fourth correct
+    /// answer in a row.
+    ///
+    /// Shorter than the vocabulary ladder on purpose. Sentences arrive far faster than words — a
+    /// single lesson can add a dozen — so a ladder that holds each one for a month leaves the
+    /// pool growing faster than it drains, and the new ones wait behind the old. Four clean
+    /// answers is less evidence than five, but a sentence is the easier test: the words in it are
+    /// drilled separately, and what is being asked here is whether it can be heard.
     /// </summary>
     public static readonly RestSchedule ListeningClean = new(
         FirstRestStreak: 1,
@@ -65,13 +71,11 @@ public sealed record RestSchedule(int FirstRestStreak, IReadOnlyList<TimeSpan> R
             TimeSpan.FromDays(1),
             TimeSpan.FromDays(3),
             TimeSpan.FromDays(7),
-            TimeSpan.FromDays(14),
         ]);
 
     /// <summary>
-    /// Listening, for a sentence missed at least once. The early rests are shorter and there is one
-    /// more rung before mastery: having got it wrong once, a streak is weaker evidence, so the same
-    /// number of correct answers buys less.
+    /// Listening, for a sentence missed at least once: the clean ladder with a rung added at the
+    /// bottom. Right once after a miss earns no rest at all, so mastery costs five.
     /// </summary>
     public static readonly RestSchedule ListeningLapsed = new(
         FirstRestStreak: 1,
@@ -79,9 +83,8 @@ public sealed record RestSchedule(int FirstRestStreak, IReadOnlyList<TimeSpan> R
         [
             TimeSpan.Zero,                 // right once after a miss earns nothing yet
             TimeSpan.FromDays(1),
+            TimeSpan.FromDays(3),
             TimeSpan.FromDays(7),
-            TimeSpan.FromDays(14),
-            TimeSpan.FromDays(28),
         ]);
 
     /// <summary>A sentence's ladder depends on whether it has ever been missed.</summary>

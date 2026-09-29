@@ -9,8 +9,9 @@ public class SyllabusOptions
     public const string SectionName = "Syllabus";
 
     /// <summary>
-    /// The HSK level being worked towards. Raise it when the level below is done - the data file
-    /// carries every level, so moving the goalposts is this one number.
+    /// The lowest HSK level to work towards. The level actually aimed at moves up on its own as
+    /// each one is finished, so this is the floor rather than the goal - it exists to skip levels
+    /// that were never the point, not to be edited every few months.
     /// </summary>
     public int Level { get; set; } = 1;
 }
@@ -40,20 +41,24 @@ public class SyllabusService(AppDbContext db, IOptions<SyllabusOptions> options)
     /// <summary>How many of the remaining words to name. Enough to choose from, few enough to read.</summary>
     private const int Shortlist = 15;
 
+    /// <summary>The top band the file carries: one exam covering 7 to 9, filed under 7.</summary>
+    private const int TopLevel = 7;
+
     private static readonly Lazy<Dictionary<int, List<SyllabusWord>>> Levels = new(Load);
 
     public int Level => settings.Level;
 
     public async Task<SyllabusProgress> ProgressAsync(CancellationToken ct)
     {
-        var syllabus = Levels.Value.GetValueOrDefault(settings.Level, []);
-
         var known = await db.VocabWords
             .AsNoTracking()
             .Select(w => w.Characters)
             .ToListAsync(ct);
 
         var mine = known.ToHashSet();
+
+        var level = AimingAt(mine);
+        var syllabus = Levels.Value.GetValueOrDefault(level, []);
         var onList = syllabus.Select(w => w.Word).ToHashSet();
 
         // Ordered by how common the word is, not by where the syllabus prints it. The syllabus is
@@ -65,11 +70,33 @@ public class SyllabusService(AppDbContext db, IOptions<SyllabusOptions> options)
             .ToList();
 
         return new SyllabusProgress(
-            settings.Level,
+            level,
             syllabus.Count,
             syllabus.Count(w => mine.Contains(w.Word)),
             nextUp,
             [.. known.Where(w => !onList.Contains(w)).Order()]);
+    }
+
+    /// <summary>
+    /// The level being worked towards: the configured floor, then upwards past every level whose
+    /// words are all in the pool.
+    ///
+    /// Finishing HSK1 should move the goal to HSK2 by itself. Left to a setting, the course would
+    /// go on being told to aim at a list it had already finished, which reads as "nothing left to
+    /// teach" — and the tutor would have to invent what comes next.
+    /// </summary>
+    private int AimingAt(HashSet<string> known)
+    {
+        var level = Math.Clamp(settings.Level, 1, TopLevel);
+
+        while (level < TopLevel
+               && Levels.Value.GetValueOrDefault(level, []) is { Count: > 0 } words
+               && words.All(w => known.Contains(w.Word)))
+        {
+            level++;
+        }
+
+        return level;
     }
 
     private static Dictionary<int, List<SyllabusWord>> Load()

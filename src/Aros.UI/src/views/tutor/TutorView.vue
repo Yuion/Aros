@@ -24,23 +24,26 @@
       </div>
     </header>
 
-    <!-- A lesson has a length, so the tutor can pace itself and wind down rather than stop dead -->
+    <!-- A lesson runs until it is ended, not until a clock says so: the length was asked for and
+         then changed nothing about what was taught -->
     <section v-if="state && !lessonRunning" class="card start">
-      <h2>Start a lesson</h2>
+      <h2>Start the next lesson</h2>
       <p class="card-note">
-        How long have you got? The tutor is told the length and how far in it is, and starts
-        winding down near the end instead of opening new ground.
+        Clears anything left pending, then asks the tutor to teach the next thing on the
+        syllabus. It runs until you press End lesson.
       </p>
-      <ul class="lengths">
-        <li v-for="minutes in LENGTHS" :key="minutes">
-          <button class="length" :disabled="busy" @click="startLesson(minutes)">{{ minutes }} min</button>
-        </li>
-      </ul>
+      <p v-if="state.syllabus?.total" class="card-note goal">
+        Working towards <strong>HSK{{ state.syllabus.level }}</strong> —
+        {{ state.syllabus.taught }} of {{ state.syllabus.total }} words.
+      </p>
+      <button class="start-lesson" :disabled="busy" @click="startLesson">
+        {{ busy ? 'Starting…' : 'Start next lesson' }}
+      </button>
     </section>
 
     <p v-else-if="state && lessonRunning" class="notice running">
-      Lesson under way — {{ state.runtime.minutesElapsed }} of
-      {{ state.runtime.minutesRequested }} minutes,
+      Lesson under way — {{ state.runtime.minutesElapsed }}
+      {{ state.runtime.minutesElapsed === 1 ? 'minute' : 'minutes' }} in,
       {{ state.runtime.exercisesSent }} {{ state.runtime.exercisesSent === 1 ? 'exercise' : 'exercises' }} set.
       <span v-if="state.runtime.plan" class="plan">{{ state.runtime.plan }}</span>
     </p>
@@ -199,7 +202,6 @@ import { render, findTables } from '@/services/markdown'
 const state = ref(null)
 const messages = ref([])
 const text = ref('')
-const LENGTHS = [15, 30, 45, 60, 90, 120]
 const busy = ref(false)
 const error = ref('')
 const context = ref(null)
@@ -221,7 +223,7 @@ function isOpen(ex) {
   return !ex.answered && state.value?.runtime?.exerciseKey === ex.key
 }
 
-const lessonRunning = computed(() => !!state.value?.runtime?.minutesRequested)
+const lessonRunning = computed(() => !!state.value?.runtime?.running)
 
 const lastFailed = computed(() => {
   const last = messages.value[messages.value.length - 1]
@@ -442,10 +444,10 @@ function pretty(payload) {
  * nobody ended is a lesson nobody recorded.
  */
 /**
- * Begins a lesson of a chosen length. It clears whatever was pending from last time, so a lesson
- * never starts halfway through an exercise nobody finished.
+ * Begins a lesson. It clears whatever was pending from last time, so a lesson never starts
+ * halfway through an exercise nobody finished, and then sends the opening message.
  */
-async function startLesson(minutes) {
+async function startLesson() {
   if (busy.value) return
 
   busy.value = true
@@ -453,7 +455,7 @@ async function startLesson(minutes) {
   importReport.value = ''
 
   try {
-    await api.post('/tutor/lesson/start', { minutes })
+    await api.post('/tutor/lesson/start')
     await load()
   } catch (e) {
     error.value = e.message
@@ -463,8 +465,16 @@ async function startLesson(minutes) {
   }
 
   // Sent as your own message so the thread reads as a conversation rather than a control panel.
-  // The runtime already carries the length; this is what makes the tutor actually begin.
-  await ask(`I want to start a new lesson. I have around ${minutes} minutes.`)
+  // Resetting the runtime only clears the slate; this is what makes the tutor actually begin.
+  //
+  // It says what the lesson is for, because a bare "start a lesson" was read as an invitation to
+  // revise. New material first, then practice of that material, and no winding down until asked:
+  // there is no clock any more, so nothing else would tell it when to stop.
+  await ask(
+    'Start the next lesson. Begin with something new from the syllabus — a word or a pattern I '
+    + 'have not had yet — introduce it properly, then practise it with me. Keep going until I '
+    + 'say the lesson is over; there is no time limit.',
+  )
 }
 
 async function newConversation() {
@@ -733,28 +743,30 @@ h1 {
   font-size: 1rem;
 }
 
-.lengths {
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-top: 0.6rem;
+.goal {
+  color: #4b5563;
 }
 
-.length {
-  padding: 0.5rem 0.9rem;
+.start-lesson {
+  margin-top: 0.7rem;
+  padding: 0.55rem 1.1rem;
   font-family: inherit;
-  font-size: 0.85rem;
+  font-size: 0.88rem;
   font-weight: 600;
-  color: #6d5bd0;
-  background: white;
-  border: 2px solid #ddd6fe;
+  color: white;
+  background: #6d5bd0;
+  border: 2px solid #6d5bd0;
   border-radius: 8px;
   cursor: pointer;
 }
 
-.length:hover:not(:disabled) {
-  border-color: #6d5bd0;
+.start-lesson:hover:not(:disabled) {
+  background: #5c4bbd;
+}
+
+.start-lesson:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 /* The plan is the one line that says what this hour is for */

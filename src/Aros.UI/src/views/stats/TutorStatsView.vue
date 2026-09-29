@@ -15,13 +15,42 @@
                   :note="`${data.totals.exercisesAnswered} answered`" />
       </section>
 
+      <!-- The one number that says whether the lessons are going anywhere. It moves on its own:
+           finish a level and the goal becomes the next one. -->
+      <section v-if="data.syllabus?.total" class="card goal">
+        <h2>
+          Progress towards HSK{{ data.syllabus.level }}
+          <span class="count">{{ data.syllabus.taught }} of {{ data.syllabus.total }}</span>
+        </h2>
+        <div class="goal-bar">
+          <span class="goal-fill" :style="{ width: `${goalShare}%` }" />
+        </div>
+        <p class="card-note">
+          {{ percent(data.syllabus.taught / data.syllabus.total) }} of the list is in your
+          vocabulary — {{ data.syllabus.total - data.syllabus.taught }} to go. When the level is
+          finished this moves to HSK{{ data.syllabus.level + 1 }} by itself.
+          <template v-if="data.syllabus.offList">
+            {{ data.syllabus.offList }} words you know are not on it; that is a count to stop
+            growing, not a target.
+          </template>
+        </p>
+        <ul v-if="data.syllabus.nextUp.length" class="next-up">
+          <li v-for="w in data.syllabus.nextUp" :key="w.word">
+            <span lang="zh">{{ w.word }}</span><span class="pin">{{ w.pinyin }}</span>
+          </li>
+        </ul>
+        <p v-if="data.syllabus.nextUp.length" class="card-note">
+          Next up, commonest first — this is where the tutor takes new vocabulary from.
+        </p>
+      </section>
+
       <!-- A lesson under way has not been written up, and only a write-up records anything -->
       <section v-if="data.inProgress" class="card running">
         <h2>Lesson in progress <span class="count">not yet recorded</span></h2>
         <p class="card-note">
           {{ data.inProgress.lessonId }} · {{ data.inProgress.phase.toLowerCase() }}
-          <template v-if="data.inProgress.minutesRequested">
-            · {{ data.inProgress.minutesElapsed }} of {{ data.inProgress.minutesRequested }} minutes
+          <template v-if="data.inProgress.minutesElapsed != null">
+            · {{ data.inProgress.minutesElapsed }} minutes in
           </template>
           · {{ data.inProgress.exercisesSent }} exercises set
         </p>
@@ -190,6 +219,15 @@ const data = ref(null)
 const loading = ref(true)
 const error = ref('')
 
+const goalShare = computed(() => {
+  const s = data.value?.syllabus
+  return s?.total ? Math.round((s.taught / s.total) * 100) : 0
+})
+
+function percent(value) {
+  return value == null ? '—' : `${Math.round(value * 100)}%`
+}
+
 // Fetched on demand and kept: a transcript is long, and every lesson's at once would bury the
 // chronicle it is filed under
 const transcripts = ref({})
@@ -277,6 +315,43 @@ onMounted(async () => {
 
 <style scoped>
 @import '@/components/stats/area.css';
+
+.goal-bar {
+  height: 10px;
+  margin: 0.5rem 0 0.6rem;
+  border-radius: 999px;
+  background: #ede9fe;
+  overflow: hidden;
+}
+
+.goal-fill {
+  display: block;
+  height: 100%;
+  background: #6d5bd0;
+}
+
+.next-up {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.7rem 0 0.4rem;
+}
+
+.next-up li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  font-size: 0.95rem;
+}
+
+.next-up .pin {
+  font-size: 0.7rem;
+  color: #9ca3af;
+}
 
 .link {
   font: inherit;

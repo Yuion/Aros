@@ -11,7 +11,6 @@ namespace Aros.Api.Controllers;
 
 public record TutorMessageRequest(string? Text);
 public record CourseFileRequest(string? Json);
-public record StartLessonRequest(int? Minutes);
 
 [ApiController]
 [Route("api/[controller]")]
@@ -23,6 +22,7 @@ public class TutorController(
     TurnRunner runner,
     LessonRuntimeService runtimeService,
     WeakPointReview weakPoints,
+    Aros.Api.Syllabus.SyllabusService syllabus,
     AiBudget budget,
     Microsoft.Extensions.Options.IOptions<AiOptions> options) : ControllerBase
 {
@@ -36,6 +36,7 @@ public class TutorController(
         var messages = await tutor.HistoryAsync(Math.Clamp(history, 1, 500), ct);
         var spend = await budget.StateAsync(ct);
         var runtime = await runtimeService.CurrentAsync(ct);
+        var syllabusProgress = await syllabus.ProgressAsync(ct);
 
         // Every exercise the visible thread refers to, so each one renders where it was set
         var keys = messages.Where(m => m.ExerciseKey is not null).Select(m => m.ExerciseKey!).ToList();
@@ -61,6 +62,13 @@ public class TutorController(
                 limit = spend.DailyTokenBudget,
                 left = spend.TokensLeft,
                 requestsThisHour = spend.RequestsThisHour,
+            },
+            // The list the course is aiming at, so the page can say what "next lesson" is for
+            syllabus = new
+            {
+                level = syllabusProgress.Level,
+                total = syllabusProgress.Total,
+                taught = syllabusProgress.Taught,
             },
             runtime = Describe(runtime),
             messages = messages.Select(m => Describe(m, exercises)),
@@ -94,19 +102,22 @@ public class TutorController(
     }
 
     /// <summary>
-    /// Begin a lesson of a given length. Clears anything left pending from last time and starts
-    /// the clock, so the tutor can pace itself and wind down rather than stopping mid-exercise.
+    /// Begin a lesson. Clears anything left pending from last time, so a lesson never starts
+    /// halfway through an exercise nobody finished.
+    ///
+    /// No length is asked for any more. The tutor was told how many minutes were wanted and how
+    /// far through it was, and it changed nothing: a lesson ran as long as it ran. A number that
+    /// steers nothing is a question not worth asking.
     /// </summary>
     [HttpPost("lesson/start")]
-    public async Task<IActionResult> StartLesson([FromBody] StartLessonRequest request, CancellationToken ct)
+    public async Task<IActionResult> StartLesson(CancellationToken ct)
     {
         // Before the tutor is told what you are weak at, the trainers get to say which of those
         // weaknesses they have since disproved. Otherwise a problem fixed a fortnight ago still
         // shapes the lesson.
         await weakPoints.SweepAsync(ct);
 
-        var minutes = request.Minutes is { } m && m > 0 ? Math.Clamp(m, 5, 240) : (int?)null;
-        var runtime = await runtimeService.ResetAsync(ct, minutes);
+        var runtime = await runtimeService.ResetAsync(ct);
 
         return Ok(Describe(runtime));
     }
@@ -121,7 +132,12 @@ public class TutorController(
         try
         {
             await budget.RequireHeadroomAsync(ct);
-            return Ok(Describe(await recorder.RecordAsync(ct)));
+            var proposal = await recorder.RecordAsync(ct);
+
+            // The write-up is the end of the lesson: the page goes back to offering the next one
+            await runtimeService.CloseAsync(await runtimeService.CurrentAsync(ct), ct);
+
+            return Ok(Describe(proposal));
         }
         catch (AiException ex)
         {
@@ -367,7 +383,7 @@ public class TutorController(
     {
         lessonId = runtime.LessonId,
         phase = runtime.Phase.ToString(),
-        minutesRequested = runtime.MinutesRequested,
+        running = runtime.StartedAt is not null,
         minutesElapsed = runtime.StartedAt is { } at ? (int)(DateTime.UtcNow - at).TotalMinutes : (int?)null,
         exerciseKey = runtime.ExerciseKey,
         awaitingUserAnswer = runtime.AwaitingUserAnswer,

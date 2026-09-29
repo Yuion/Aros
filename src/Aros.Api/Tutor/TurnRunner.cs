@@ -292,10 +292,7 @@ public class TurnRunner(
         await runtimeService.PlanAsync(runtime, turn["lesson_plan"]?.GetValue<string>(), ct);
 
         if (turn["lesson_complete"]?.GetValue<bool>() == true)
-        {
-            runtime.Phase = LessonPhase.Idle;
-            await db.SaveChangesAsync(ct);
-        }
+            await runtimeService.CloseAsync(runtime, ct);
     }
 
     private static IEnumerable<string> Strings(JsonNode? node) =>

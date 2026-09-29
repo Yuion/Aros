@@ -23,6 +23,8 @@ const TABS = [
   { to: '/stats/listening', label: 'Listening', icon: '👂' },
   { to: '/stats/vocab', label: 'Vocabulary', icon: '📖' },
   { to: '/stats/grammar', label: 'Grammar', icon: '🧩' },
+  { to: '/stats/tones', label: 'Tones', icon: '🎵' },
+  { to: '/stats/writing', label: 'Writing', icon: '✍️' },
   { to: '/stats/tutor', label: 'Tutor', icon: '🧑‍🏫' },
 ]
 </script>

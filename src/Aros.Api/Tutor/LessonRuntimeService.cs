@@ -126,22 +126,6 @@ public class LessonRuntimeService(AppDbContext db)
         if (runtime.NewGrammarThisLesson.Count > 0)
             text.AppendLine($"  new_grammar_this_lesson: {string.Join(", ", runtime.NewGrammarThisLesson)}");
 
-        if (runtime.MinutesRequested is { } minutes)
-        {
-            text.AppendLine($"  minutes_requested: {minutes}");
-
-            if (runtime.StartedAt is { } started)
-            {
-                var elapsed = (int)(DateTime.UtcNow - started).TotalMinutes;
-                text.AppendLine($"  minutes_elapsed: {elapsed}");
-
-                if (elapsed >= minutes)
-                    text.AppendLine("  the requested time is up — bring the lesson to a close");
-                else if (elapsed >= minutes * 0.8)
-                    text.AppendLine("  approaching the end — start winding down rather than opening new ground");
-            }
-        }
-
         return text.ToString().TrimEnd();
     }
 
@@ -221,7 +205,7 @@ public class LessonRuntimeService(AppDbContext db)
     }
 
     /// <summary>A fresh lesson: a new id, nothing pending, nothing yet introduced.</summary>
-    public async Task<LessonRuntime> ResetAsync(CancellationToken ct, int? minutes = null)
+    public async Task<LessonRuntime> ResetAsync(CancellationToken ct)
     {
         var runtime = await CurrentAsync(ct);
 
@@ -242,10 +226,23 @@ public class LessonRuntimeService(AppDbContext db)
         runtime.NewVocabularyThisLesson = [];
         runtime.NewGrammarThisLesson = [];
         runtime.StartedAt = DateTime.UtcNow;
-        runtime.MinutesRequested = minutes;
-        runtime.Phase = minutes is null ? LessonPhase.Idle : LessonPhase.Input;
+        runtime.Phase = LessonPhase.Input;
 
         await db.SaveChangesAsync(ct);
         return runtime;
+    }
+
+    /// <summary>
+    /// The lesson is over — because it was written up, or because the tutor said so. Clearing the
+    /// start time is what puts "Start next lesson" back on the page.
+    /// </summary>
+    public async Task CloseAsync(LessonRuntime runtime, CancellationToken ct)
+    {
+        if (runtime.StartedAt is null && runtime.Phase == LessonPhase.Idle) return;
+
+        runtime.StartedAt = null;
+        runtime.Phase = LessonPhase.Idle;
+
+        await db.SaveChangesAsync(ct);
     }
 }

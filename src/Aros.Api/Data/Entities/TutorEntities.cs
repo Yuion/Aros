@@ -220,13 +220,20 @@ public class LessonRuntime
     public List<string> NewVocabularyThisLesson { get; set; } = [];
     public List<string> NewGrammarThisLesson { get; set; } = [];
 
-    public int? MinutesRequested { get; set; }
+    /// <summary>
+    /// When the current lesson began, and null when none is running — the one marker for "a
+    /// lesson is under way".
+    ///
+    /// There used to be a requested length beside it, and the tutor was told how far through it
+    /// was so it could wind down. It never worked: the lesson ran as long as it ran, and a
+    /// minute count the model could not feel made no difference to what it taught.
+    /// </summary>
     public DateTime? StartedAt { get; set; }
 
     /// <summary>
     /// What this lesson set out to do, written once at the start and never rewritten. A lesson
-    /// that only ends when the clock runs out cannot be judged afterwards; one with a stated aim
-    /// can be, by you and by the write-up.
+    /// judged only by when it stopped cannot be judged afterwards; one with a stated aim can be,
+    /// by you and by the write-up.
     /// </summary>
     public string Plan { get; set; } = "";
 }
