@@ -59,6 +59,13 @@ const routes = [
     meta: { nav: true, label: 'Chinese Listening', icon: '👂' },
   },
   {
+    // The ear on its own: one syllable, which of the four tones was it
+    path: '/tones',
+    name: 'tones',
+    component: () => import('@/views/tones/TonesView.vue'),
+    meta: { nav: true, label: 'Tones', icon: '🎵' },
+  },
+  {
     // Practice for the hand rather than the memory, so it sits with the trainers - but it
     // records nothing the trainers read
     path: '/writing',

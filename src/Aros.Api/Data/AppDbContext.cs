@@ -16,6 +16,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     /// <summary>Handwriting practice. Read by the writing page and nothing else — see the entity.</summary>
     public DbSet<WritingAttempt> WritingAttempts => Set<WritingAttempt>();
 
+    /// <summary>Tones told apart by ear. Read by the tone trainer and nothing else.</summary>
+    public DbSet<ToneAnswer> ToneAnswers => Set<ToneAnswer>();
+
     public DbSet<TutorSettings> TutorSettings => Set<TutorSettings>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<GrammarPoint> GrammarPoints => Set<GrammarPoint>();
@@ -69,6 +72,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                   .WithMany()
                   .HasForeignKey(a => a.WordId)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ToneAnswer>(entity =>
+        {
+            entity.HasIndex(a => new { a.Syllable, a.Tone });
+            entity.HasIndex(a => a.At);
         });
 
         modelBuilder.Entity<GrammarPoint>(entity => entity.HasIndex(g => g.Key).IsUnique());

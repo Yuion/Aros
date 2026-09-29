@@ -219,7 +219,8 @@ public class TtsService(
         Path.Combine(_options.MediaPath, Path.GetFileName(location));
 
     /// <summary>Content-addressed name: same sentence always lands on the same file, no illegal characters.</summary>
-    private static string FileNameFor(string sentence)
+    /// <summary>Content-addressed: the same text is always the same file, spoken once ever.</summary>
+    public static string FileNameFor(string sentence)
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(sentence));
         return $"{Convert.ToHexString(hash).ToLowerInvariant()}.mp3";

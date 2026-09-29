@@ -74,21 +74,12 @@ public class SyllabusService(AppDbContext db, IOptions<SyllabusOptions> options)
 
     private static Dictionary<int, List<SyllabusWord>> Load()
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "Syllabus", "hsk.tsv");
         var levels = new Dictionary<int, List<SyllabusWord>>();
 
-        if (!File.Exists(path)) return levels;
-
-        foreach (var line in File.ReadLines(path).Skip(1))
+        foreach (var row in HskFile.Rows())
         {
-            var parts = line.Split('\t');
-            if (parts.Length < 4 || !int.TryParse(parts[0], out var level)) continue;
-
-            // A blank rank means the frequency list did not cover the word; sorted last, not first
-            _ = int.TryParse(parts[3], out var rank);
-
-            if (!levels.TryGetValue(level, out var words)) levels[level] = words = [];
-            words.Add(new SyllabusWord(parts[1], parts[2], rank));
+            if (!levels.TryGetValue(row.Level, out var words)) levels[row.Level] = words = [];
+            words.Add(new SyllabusWord(row.Word, row.Pinyin, row.Rank));
         }
 
         return levels;

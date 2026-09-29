@@ -51,6 +51,7 @@ builder.Services.AddScoped<Aros.Api.Grammar.GrammarLibrary>();
 builder.Services.AddScoped<Aros.Api.Daily.DailyService>();
 builder.Services.AddScoped<Aros.Api.Backup.BackupService>();
 builder.Services.AddScoped<Aros.Api.Writing.WritingService>();
+builder.Services.AddScoped<Aros.Api.Tones.ToneService>();
 builder.Services.AddScoped<VocabImporter>();
 builder.Services.Configure<Aros.Api.Syllabus.SyllabusOptions>(
     builder.Configuration.GetSection(Aros.Api.Syllabus.SyllabusOptions.SectionName));
