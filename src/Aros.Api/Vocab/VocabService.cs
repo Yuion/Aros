@@ -270,7 +270,7 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
     /// English is shared with another cannot be asked English → characters, and holding it open
     /// for a direction it will never be asked in would leave it permanently unfinished.
     /// </summary>
-    public async Task<(int Mastered, int Total, int Retired)> CoverageAsync(CancellationToken ct)
+    public async Task<(int Mastered, int Total)> CoverageAsync(CancellationToken ct)
     {
         var words = await TestableAsync(null, ct);
         var unique = PromptCounts(words);
@@ -288,7 +288,7 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
                 mastered++;
         }
 
-        return (mastered, words.Count, words.Count(w => w.RetiredAt is not null));
+        return (mastered, words.Count);
     }
 
     public static Availability.Standing Standing(VocabWord word, VocabDirection direction)

@@ -53,7 +53,7 @@ public class StatsController(
             .Select(a => new { a.Correct, a.TtsClipId })
             .ToListAsync(ct);
 
-        var (masteredClips, clipsTotal, retiredClips) = await listening.CoverageAsync(ct);
+        var (masteredClips, clipsTotal) = await listening.CoverageAsync(ct);
         var listeningStanding = await listening.AvailabilityAsync(ct);
 
         var totals = new
@@ -71,7 +71,6 @@ public class StatsController(
             trouble = recentAnswers.Where(a => !a.Correct).Select(a => a.TtsClipId).Distinct().Count(),
             masteredClips,
             clipsTotal,
-            retiredClips,
             librarySize = clips.Count,
             practiced = played.Count,
             neverPracticed = clips.Count - played.Count,
@@ -189,7 +188,7 @@ public class StatsController(
             .Select(a => new { a.Correct, a.VocabWordId })
             .ToListAsync(ct);
 
-        var (masteredWords, wordsInRotation, retiredWords) = await vocab.CoverageAsync(ct);
+        var (masteredWords, wordsInRotation) = await vocab.CoverageAsync(ct);
         var vocabStanding = await vocab.AvailabilityAsync(null, ct);
 
         var totals = new
@@ -207,7 +206,6 @@ public class StatsController(
             trouble = recentAnswers.Where(a => !a.Correct).Select(a => a.VocabWordId).Distinct().Count(),
             masteredWords,
             wordsInRotation,
-            retiredWords,
             wordsTotal = words.Count,
             practiced = words.Count(w => w.Progress.Count > 0),
             neverPracticed = words.Count(w => w.Progress.Count == 0 && !w.NeedsReview),

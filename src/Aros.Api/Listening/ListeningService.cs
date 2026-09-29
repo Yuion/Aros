@@ -235,7 +235,7 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     /// never asked for English, and waiting for a mode that will never come would leave it
     /// permanently unfinished.
     /// </summary>
-    public async Task<(int Mastered, int Total, int Retired)> CoverageAsync(CancellationToken ct)
+    public async Task<(int Mastered, int Total)> CoverageAsync(CancellationToken ct)
     {
         var clips = await AudibleClipsAsync(ct);
         var audible = await AudibleFormsAsync(clips, ct);
@@ -257,7 +257,7 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
                 mastered++;
         }
 
-        return (mastered, clips.Count, clips.Count(c => c.RetiredAt is not null));
+        return (mastered, clips.Count);
     }
 
     /// <summary>

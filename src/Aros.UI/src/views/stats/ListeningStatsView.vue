@@ -6,7 +6,7 @@
     <template v-else-if="data">
       <section class="tiles">
         <StatTile label="Sentences done" :value="data.totals.masteredClips" :of="data.totals.clipsTotal"
-                  :note="`every mode mastered${retiredNote}`" />
+                  note="every mode mastered" />
         <StatTile :label="`Accuracy · ${data.totals.recentDays} days`" :value="percent(data.totals.recentAccuracy)"
                   :note="recentNote" />
         <StatTile label="Ready now" :value="data.totals.dueNow"
@@ -101,12 +101,6 @@ const recentNote = computed(() => {
   if (!t) return ''
   if (!t.recentAnswered) return 'nothing answered lately'
   return `${t.recentAnswered} answers · ${percent(t.accuracy)} all time`
-})
-
-/** Retired sentences count as done, and say so rather than quietly inflating the figure. */
-const retiredNote = computed(() => {
-  const retired = data.value?.totals?.retiredClips ?? 0
-  return retired ? ` · ${retired} retired by hand` : ''
 })
 
 import AccuracyChart from '@/components/stats/AccuracyChart.vue'
