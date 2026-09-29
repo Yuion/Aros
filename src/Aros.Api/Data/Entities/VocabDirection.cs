@@ -8,6 +8,11 @@ public enum VocabDirection
 {
     CharactersToPinyin,
     CharactersToEnglish,
+    /// <summary>
+    /// Retired: pinyin and English are both things the learner already reads, so asking one from
+    /// the other tests a gloss rather than the language. The values stay for the answers already
+    /// recorded under them - see VocabService.Asked, which is what the trainer offers now.
+    /// </summary>
     PinyinToEnglish,
     EnglishToPinyin,
     PinyinToCharacters,

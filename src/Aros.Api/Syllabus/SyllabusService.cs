@@ -33,7 +33,7 @@ public record SyllabusProgress(
 /// lessons in, 51 of the 300 words were taught while 22 words outside the list had been, most
 /// of them one long run of transport vocabulary. Prose cannot be checked. A list can.
 /// </summary>
-public class SyllabusService(AppDbContext db, IOptions<SyllabusOptions> options, IWebHostEnvironment environment)
+public class SyllabusService(AppDbContext db, IOptions<SyllabusOptions> options)
 {
     private readonly SyllabusOptions settings = options.Value;
 

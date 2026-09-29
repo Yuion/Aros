@@ -64,9 +64,8 @@ public class GrammarService(AppDbContext db, IMemoryCache cache)
 
         if (askable.Count == 0) throw new GrammarException(NothingToAsk(points, items, progress));
 
-        // A pattern never drilled is new, not overdue: the trainer opened with all 34 due at once
-        var intake = SessionBudget.RemainingIntake(await IntroducedTodayAsync(ct));
-        askable = SessionBudget.WithIntake(askable, p => !progress.ContainsKey(p.Id), intake);
+        // No intake limit: this is the trainer you opened on purpose, and it reaches everything
+        // that is neither retired nor resting. The day's ration belongs to the daily round.
 
         if (askable.Count == 0)
             throw new GrammarException(
@@ -273,12 +272,9 @@ public class GrammarService(AppDbContext db, IMemoryCache cache)
     {
         var (points, items, progress) = await PoolAsync(ct);
 
-        var allowance = SessionBudget.RemainingIntake(await IntroducedTodayAsync(ct));
-
         return Availability.From(
-                "Grammar",
-                points.Where(p => items.Any(i => i.GrammarPointId == p.Id)).Select(p => Standing(p, progress)))
-            .WithIntake(allowance);
+            "Grammar",
+            points.Where(p => items.Any(i => i.GrammarPointId == p.Id)).Select(p => Standing(p, progress)));
     }
 
     /// <summary>Every pattern with its record — the page behind the start button.</summary>

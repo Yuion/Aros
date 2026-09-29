@@ -5,14 +5,14 @@
 
     <template v-else-if="data">
       <section class="tiles">
-        <StatTile label="Accuracy" :value="percent(data.totals.accuracy)"
-                  :note="`${data.totals.correct} of ${data.totals.answers} answers`" />
-        <StatTile label="Mastered" :value="data.totals.mastered"
-                  :note="`word + direction · ${data.totals.resting} resting`" />
-        <StatTile label="Practiced" :value="data.totals.practiced" :of="data.totals.wordsTotal"
-                  :note="`${data.totals.neverPracticed} untouched`" />
-        <StatTile label="Needs review" :value="data.totals.needsReview" small
-                  note="held out of tests" />
+        <StatTile label="Words done" :value="data.totals.masteredWords" :of="data.totals.wordsInRotation"
+                  :note="`every direction mastered${retiredNote}`" />
+        <StatTile :label="`Accuracy · ${data.totals.recentDays} days`" :value="percent(data.totals.recentAccuracy)"
+                  :note="recentNote" />
+        <StatTile label="Ready now" :value="data.totals.dueNow"
+                  note="waiting, rests aside" />
+        <StatTile label="Going wrong" :value="data.totals.trouble" small
+                  :note="`words missed in ${data.totals.recentDays} days`" />
       </section>
 
       <p v-if="!data.totals.answers" class="placeholder">
@@ -93,6 +93,21 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { api } from '@/services/api'
 import StatTile from '@/components/stats/StatTile.vue'
+
+/** Lifetime accuracy still exists; it sits under the recent one instead of standing in for it. */
+const recentNote = computed(() => {
+  const t = data.value?.totals
+  if (!t) return ''
+  if (!t.recentAnswered) return 'nothing answered lately'
+  return `${t.recentAnswered} answers · ${percent(t.accuracy)} all time`
+})
+
+/** Retired words count as done, and say so rather than quietly inflating the figure. */
+const retiredNote = computed(() => {
+  const retired = data.value?.totals?.retiredWords ?? 0
+  return retired ? ` · ${retired} retired by hand` : ''
+})
+
 import AccuracyChart from '@/components/stats/AccuracyChart.vue'
 import RankedBars from '@/components/stats/RankedBars.vue'
 import MasteryBars from '@/components/stats/MasteryBars.vue'
@@ -100,8 +115,6 @@ import MasteryBars from '@/components/stats/MasteryBars.vue'
 const DIRECTION_LABELS = {
   CharactersToPinyin: '汉字 → pinyin',
   CharactersToEnglish: '汉字 → English',
-  PinyinToEnglish: 'pinyin → English',
-  EnglishToPinyin: 'English → pinyin',
   PinyinToCharacters: 'pinyin → 汉字',
   EnglishToCharacters: 'English → 汉字',
 }

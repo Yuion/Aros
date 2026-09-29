@@ -67,7 +67,7 @@ public class VocabController(
 
     private static object Describe(VocabWord word, (int Attempts, int Clean) written)
     {
-        var directions = Enum.GetValues<VocabDirection>().Select(d => Direction(word, d)).ToList();
+        var directions = VocabService.Asked.Select(d => Direction(word, d)).ToList();
 
         return new
         {

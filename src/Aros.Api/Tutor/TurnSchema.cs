@@ -65,7 +65,9 @@ public static class TurnSchema
                     "The prompt's reading in tone numbers — ta1 zuo4 che1 qu4 ji1 chang3 — whenever "
                     + "the prompt contains Chinese characters. The learner cannot read characters "
                     + "unaided, so a prompt in characters without this is a task they cannot start. "
-                    + "Null when the prompt is English."),
+                    + "Null when the prompt is English, and null for the pinyin and tone types, "
+                    + "where the reading is what is being asked for — the application drops it "
+                    + "there in any case."),
                 ["expected_answer"] = Text(
                     "The answer you have in mind. For a Chinese-production task this must be the "
                     + "full Chinese answer: the application builds the character bank from it, so "

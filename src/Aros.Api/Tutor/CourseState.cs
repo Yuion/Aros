@@ -105,7 +105,7 @@ public class CourseState(AppDbContext db, Aros.Api.Syllabus.SyllabusService syll
         var rows = words.SelectMany(w => w.Progress).ToList();
         if (rows.Count == 0) return;
 
-        var scored = Enum.GetValues<VocabDirection>()
+        var scored = Aros.Api.Vocab.VocabService.Asked
             .Select(direction =>
             {
                 var forDirection = rows.Where(p => p.Direction == direction).ToList();

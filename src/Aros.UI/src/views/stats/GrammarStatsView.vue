@@ -5,14 +5,14 @@
 
     <template v-else-if="data">
       <section class="tiles">
-        <StatTile label="Accuracy" :value="percent(data.totals.accuracy)"
-                  :note="`${data.totals.correct} of ${data.totals.answers} answers`" />
-        <StatTile label="Mastered" :value="data.totals.mastered"
-                  :note="`patterns · ${data.totals.resting} resting`" />
-        <StatTile label="Practised" :value="data.totals.practised" :of="data.totals.withDrills"
+        <StatTile label="Patterns done" :value="data.totals.mastered" :of="data.totals.withDrills"
                   :note="`${data.totals.neverPractised} never produced cold`" />
-        <StatTile label="Drills" :value="data.totals.drills" small
-                  :note="noDrillsNote" />
+        <StatTile :label="`Accuracy · ${data.totals.recentDays} days`" :value="percent(data.totals.recentAccuracy)"
+                  :note="recentNote" />
+        <StatTile label="Ready now" :value="data.totals.dueNow"
+                  note="waiting, rests aside" />
+        <StatTile label="Going wrong" :value="data.totals.trouble" small
+                  :note="`patterns missed in ${data.totals.recentDays} days`" />
       </section>
 
       <p v-if="!data.totals.answers" class="placeholder">
@@ -99,6 +99,15 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { api } from '@/services/api'
 import StatTile from '@/components/stats/StatTile.vue'
+
+/** Lifetime accuracy still exists; it sits under the recent one instead of standing in for it. */
+const recentNote = computed(() => {
+  const t = data.value?.totals
+  if (!t) return ''
+  if (!t.recentAnswered) return 'nothing answered lately'
+  return `${t.recentAnswered} answers · ${percent(t.accuracy)} all time`
+})
+
 import AccuracyChart from '@/components/stats/AccuracyChart.vue'
 import RankedBars from '@/components/stats/RankedBars.vue'
 

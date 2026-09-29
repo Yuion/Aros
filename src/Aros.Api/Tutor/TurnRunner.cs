@@ -150,7 +150,20 @@ public class TurnRunner(
 
         if (items.Count == 0) return null;
 
-        var (readable, unreadable) = await ReadableAsync(items, ct);
+        // On a task whose answer IS the reading, the reading is the answer. The model mostly
+        // leaves prompt_pinyin off these, and then the application helpfully filled it in from
+        // the vocabulary and printed it under the prompt - so the exercise came with its own
+        // solution attached. Stripped here rather than asked for in the instructions, because a
+        // prompt is a request and this is a guarantee.
+        var type = proposed["type"]?.GetValue<string>() ?? "";
+
+        if (GivesAwayTheReading(type))
+            items = [.. items.Select(i => i with { PromptPinyin = null })];
+
+        var (readable, unreadable) = type is "pinyin" or "tone"
+            ? (items, new List<string>())
+            : await ReadableAsync(items, ct);
+
         items = readable;
 
         var fingerprint = ExerciseGuard.Fingerprint(items);
@@ -210,6 +223,12 @@ public class TurnRunner(
     /// which is the vocabulary a prompt is supposed to be built from, so it nearly always covers
     /// it. Whatever is left over is named in the warning rather than left as a silent gap.
     /// </summary>
+    /// <summary>
+    /// Exercise types where the learner is asked for the reading itself. Handing them the reading
+    /// is handing them the answer, so these carry the prompt alone.
+    /// </summary>
+    private static bool GivesAwayTheReading(string type) => type is "pinyin" or "tone";
+
     private async Task<(List<ExerciseItem> Items, List<string> Unreadable)> ReadableAsync(
         List<ExerciseItem> items, CancellationToken ct)
     {

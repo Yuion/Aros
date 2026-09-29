@@ -19,6 +19,12 @@ public class StatsController(
 {
     private const int TrendDays = 30;
 
+    /// <summary>
+    /// The window the headline accuracy is measured over. Long enough to be more than one round,
+    /// short enough that this week can still move it.
+    /// </summary>
+    private const int RecentDays = 14;
+
 
 
     [HttpGet("listening")]
@@ -37,13 +43,35 @@ public class StatsController(
         var wrong = rows.Sum(r => r.Stat.WrongCount);
         var answers = correct + wrong;
 
-        // Running totals cover all time, including rounds played before answer history existed.
+        // A tile earns its place by answering a question. "91% over 2194 answers" answers none -
+        // it is an average so long that a bad week cannot move it. What follows is: how far
+        // through am I, how am I doing lately, what can I do right now, and what is going wrong.
+        var recentSince = DateTime.UtcNow.Date.AddDays(-(RecentDays - 1));
+
+        var recentAnswers = await db.ListeningAnswers
+            .Where(a => a.AnsweredAt >= recentSince)
+            .Select(a => new { a.Correct, a.TtsClipId })
+            .ToListAsync(ct);
+
+        var (masteredClips, clipsTotal, retiredClips) = await listening.CoverageAsync(ct);
+        var listeningStanding = await listening.AvailabilityAsync(ct);
+
         var totals = new
         {
             answers,
             correct,
             wrong,
             accuracy = answers == 0 ? (double?)null : (double)correct / answers,
+            recentDays = RecentDays,
+            recentAnswered = recentAnswers.Count,
+            recentAccuracy = recentAnswers.Count == 0
+                ? (double?)null
+                : (double)recentAnswers.Count(a => a.Correct) / recentAnswers.Count,
+            dueNow = listeningStanding.Sum(a => a.Ready),
+            trouble = recentAnswers.Where(a => !a.Correct).Select(a => a.TtsClipId).Distinct().Count(),
+            masteredClips,
+            clipsTotal,
+            retiredClips,
             librarySize = clips.Count,
             practiced = played.Count,
             neverPracticed = clips.Count - played.Count,
@@ -151,12 +179,35 @@ public class StatsController(
         var wrong = rows.Sum(r => r.Progress.WrongCount);
         var answers = correct + wrong;
 
+        // A tile earns its place by answering a question. "91% over 2194 answers" answers none -
+        // it is an average so long that a bad week cannot move it. What follows is: how far
+        // through am I, how am I doing lately, what can I do right now, and what is going wrong.
+        var recentSince = DateTime.UtcNow.Date.AddDays(-(RecentDays - 1));
+
+        var recentAnswers = await db.VocabAnswers
+            .Where(a => a.AnsweredAt >= recentSince)
+            .Select(a => new { a.Correct, a.VocabWordId })
+            .ToListAsync(ct);
+
+        var (masteredWords, wordsInRotation, retiredWords) = await vocab.CoverageAsync(ct);
+        var vocabStanding = await vocab.AvailabilityAsync(null, ct);
+
         var totals = new
         {
             answers,
             correct,
             wrong,
             accuracy = answers == 0 ? (double?)null : (double)correct / answers,
+            recentDays = RecentDays,
+            recentAnswered = recentAnswers.Count,
+            recentAccuracy = recentAnswers.Count == 0
+                ? (double?)null
+                : (double)recentAnswers.Count(a => a.Correct) / recentAnswers.Count,
+            dueNow = vocabStanding.Sum(a => a.Ready),
+            trouble = recentAnswers.Where(a => !a.Correct).Select(a => a.VocabWordId).Distinct().Count(),
+            masteredWords,
+            wordsInRotation,
+            retiredWords,
             wordsTotal = words.Count,
             practiced = words.Count(w => w.Progress.Count > 0),
             neverPracticed = words.Count(w => w.Progress.Count == 0 && !w.NeedsReview),
@@ -190,7 +241,7 @@ public class StatsController(
 
         // The point of tracking per direction: recognition and production come apart, and the
         // gap between them is the thing worth seeing.
-        var byDirection = Enum.GetValues<VocabDirection>()
+        var byDirection = VocabService.Asked
             .Select(direction =>
             {
                 var forDirection = rows.Where(r => r.Progress.Direction == direction).ToList();
@@ -289,8 +340,25 @@ public class StatsController(
         var wrong = practised.Sum(row => row.Progress!.WrongCount);
         var answers = correct + wrong;
 
+        // A tile earns its place by answering a question. "91% over 2194 answers" answers none -
+        // it is an average so long that a bad week cannot move it. What follows is: how far
+        // through am I, how am I doing lately, what can I do right now, and what is going wrong.
+        var recentSince = DateTime.UtcNow.Date.AddDays(-(RecentDays - 1));
+
+        var recentAnswers = await db.GrammarAnswers
+            .Where(a => a.AnsweredAt >= recentSince)
+            .Select(a => new { a.Correct, a.GrammarItemId })
+            .ToListAsync(ct);
+
         var totals = new
         {
+            recentDays = RecentDays,
+            recentAnswered = recentAnswers.Count,
+            recentAccuracy = recentAnswers.Count == 0
+                ? (double?)null
+                : (double)recentAnswers.Count(a => a.Correct) / recentAnswers.Count,
+            dueNow = standing.Ready,
+            trouble = recentAnswers.Where(a => !a.Correct).Select(a => a.GrammarItemId).Distinct().Count(),
             patterns = overview.Count,
             withDrills = overview.Count(row => row.Items > 0),
             drills = overview.Sum(row => row.Items),

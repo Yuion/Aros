@@ -72,19 +72,19 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
         // Which words can be asked in which direction. Rests and mastery are judged per
         // (word, direction), so mastering 水 → "water" leaves "water" → 水 in full rotation:
         // they are separate skills and separately scored, and one says nothing about the other.
-        var testable = Enum.GetValues<VocabDirection>()
+        var testable = Asked
             .Where(direction => only is null || direction == only)
             .ToDictionary(
                 direction => direction,
                 direction => words.Where(w => Directions(w, unique).Contains(direction)).ToList());
 
-        var intake = SessionBudget.RemainingIntake(await IntroducedTodayAsync(ct));
+        // No intake limit: this is the trainer you opened on purpose, and it reaches everything
+        // that is neither retired nor resting. The day's ration belongs to the daily round.
         var recent = await RecentMissesAsync(ct);
 
         var candidates = testable.ToDictionary(
             pair => pair.Key,
-            pair => SessionBudget.WithIntake(
-                Askable(pair.Value, pair.Key), word => Progress(word, pair.Key) is null, intake));
+            pair => Askable(pair.Value, pair.Key));
 
         if (candidates.Values.All(list => list.Count == 0))
         {
@@ -238,16 +238,15 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
         var words = await TestableAsync(tag, ct);
         var unique = PromptCounts(words);
 
-        var allowance = SessionBudget.RemainingIntake(await IntroducedTodayAsync(ct));
-
+        // Drives the start button on the vocabulary page, which is not rationed - so neither
+        // is the count it shows. StandingAsync is the daily planner's view and still rations.
         return
         [
-            .. Enum.GetValues<VocabDirection>()
+            .. Asked
                 .Select(direction => Availability.From(
-                        direction.ToString(),
-                        words.Where(w => Directions(w, unique).Contains(direction))
-                             .Select(w => Standing(w, direction)))
-                    .WithIntake(allowance))
+                    direction.ToString(),
+                    words.Where(w => Directions(w, unique).Contains(direction))
+                         .Select(w => Standing(w, direction))))
         ];
     }
 
@@ -260,6 +259,36 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
             .ToListAsync(ct);
 
         return tag is { Length: > 0 } ? words.Where(w => w.Tags.Contains(tag)).ToList() : words;
+    }
+
+    /// <summary>
+    /// Words finished in every direction the trainer asks of them, which is the only sense in
+    /// which a word is done. Counting (word, direction) pairs gave a headline of 363 beside a
+    /// library of 79, a number too big to mean anything and never the one being asked for.
+    ///
+    /// A word is only ever counted against the directions it can be asked in: a word whose
+    /// English is shared with another cannot be asked English → characters, and holding it open
+    /// for a direction it will never be asked in would leave it permanently unfinished.
+    /// </summary>
+    public async Task<(int Mastered, int Total, int Retired)> CoverageAsync(CancellationToken ct)
+    {
+        var words = await TestableAsync(null, ct);
+        var unique = PromptCounts(words);
+
+        var mastered = 0;
+
+        foreach (var word in words)
+        {
+            if (word.RetiredAt is not null) { mastered++; continue; }
+
+            var directions = Directions(word, unique).ToList();
+            if (directions.Count == 0) continue;
+
+            if (directions.All(d => Progress(word, d) is { } p && Ladder(p).IsMastered(p.ConsecutiveCorrect)))
+                mastered++;
+        }
+
+        return (mastered, words.Count, words.Count(w => w.RetiredAt is not null));
     }
 
     public static Availability.Standing Standing(VocabWord word, VocabDirection direction)
@@ -413,6 +442,19 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
     /// readings cannot be asked for "its" pinyin. Ambiguity is dropped rather than guessed at, the
     /// same rule the listening trainer applies to sound-alikes.
     /// </summary>
+    /// <summary>
+    /// The directions the trainer actually asks. Pinyin and English are both readable to this
+    /// learner, so pinyin -> English and English -> pinyin tested a gloss rather than the
+    /// language; the characters are the part worth drilling in both directions.
+    /// </summary>
+    public static readonly IReadOnlyList<VocabDirection> Asked =
+    [
+        VocabDirection.CharactersToPinyin,
+        VocabDirection.CharactersToEnglish,
+        VocabDirection.PinyinToCharacters,
+        VocabDirection.EnglishToCharacters,
+    ];
+
     private static IEnumerable<VocabDirection> Directions(VocabWord word, PromptIndex unique)
     {
         var hasPinyin = word.Pinyin.Length > 0;
@@ -424,8 +466,6 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
 
         if (charactersIdentify && hasPinyin) yield return VocabDirection.CharactersToPinyin;
         if (charactersIdentify && hasEnglish) yield return VocabDirection.CharactersToEnglish;
-        if (pinyinIdentifies && hasEnglish) yield return VocabDirection.PinyinToEnglish;
-        if (englishIdentifies && hasPinyin) yield return VocabDirection.EnglishToPinyin;
         if (pinyinIdentifies) yield return VocabDirection.PinyinToCharacters;
         if (englishIdentifies) yield return VocabDirection.EnglishToCharacters;
     }
@@ -495,7 +535,6 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
         {
             [VocabDirection.EnglishToCharacters] = VocabDirection.CharactersToEnglish,
             [VocabDirection.PinyinToCharacters] = VocabDirection.CharactersToPinyin,
-            [VocabDirection.EnglishToPinyin] = VocabDirection.PinyinToEnglish,
         };
 
     private static void Credit(VocabWord word, VocabDirection direction)

@@ -205,8 +205,6 @@ const FILTERS = [...BASE_FILTERS.slice(0, -1), GAP_FILTERS.vocab, BASE_FILTERS.a
 const DIRECTIONS = [
   { value: 'CharactersToPinyin', label: 'Characters → Pinyin' },
   { value: 'CharactersToEnglish', label: 'Characters → English' },
-  { value: 'PinyinToEnglish', label: 'Pinyin → English' },
-  { value: 'EnglishToPinyin', label: 'English → Pinyin' },
   { value: 'PinyinToCharacters', label: 'Pinyin → Characters' },
   { value: 'EnglishToCharacters', label: 'English → Characters' },
 ]

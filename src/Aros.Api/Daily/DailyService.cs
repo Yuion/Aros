@@ -1,6 +1,5 @@
 using Aros.Api.Data;
 using Aros.Api.Data.Entities;
-using Aros.Api.Grammar;
 using Aros.Api.Listening;
 using Aros.Api.Scheduling;
 using Aros.Api.Vocab;
@@ -53,8 +52,7 @@ public class DailyException(string message) : Exception(message);
 public class DailyService(
     AppDbContext db,
     ListeningService listening,
-    VocabService vocab,
-    GrammarService grammar)
+    VocabService vocab)
 {
     /// <summary>How many answers back the accuracy behind each share is measured over.</summary>
     public const int AccuracyDays = 60;
@@ -62,7 +60,7 @@ public class DailyService(
     /// <summary>Questions per batch of endless practice — enough to keep going, small enough to stop.</summary>
     public const int EndlessBatch = 12;
 
-    private static readonly IReadOnlyList<VocabDirection> Directions = Enum.GetValues<VocabDirection>();
+    private static readonly IReadOnlyList<VocabDirection> Directions = VocabService.Asked;
 
     // ------------------------------------------------------------------ planning
 
@@ -110,17 +108,10 @@ public class DailyService(
                 Accuracy(score?.Right, score?.Total)));
         }
 
-        var grammarStanding = await grammar.StandingAsync(ct);
-        var grammarRight = await db.GrammarAnswers.CountAsync(a => a.AnsweredAt >= since && a.Correct, ct);
-        var grammarTotal = await db.GrammarAnswers.CountAsync(a => a.AnsweredAt >= since, ct);
-
-        tracks.Add(new Track(
-            "grammar",
-            "Grammar · build the sentence",
-            grammarStanding.Ready,
-            grammarStanding.Unmastered,
-            Accuracy(grammarRight, grammarTotal)));
-
+        // Grammar is not part of the day's round. Building a sentence from tiles is a slower,
+        // more deliberate thing than recalling a word or a sentence by ear, and mixing it in made
+        // the daily session something to get through rather than something to do. It has its own
+        // trainer, which is not rationed and can be opened whenever there is appetite for it.
         return tracks;
     }
 
@@ -206,18 +197,6 @@ public class DailyService(
             cards.AddRange(session.Questions.Select(Card));
         }
 
-        var points = misses
-            .Where(m => m.Kind == "grammar")
-            .Select(m => m.Id)
-            .Distinct()
-            .ToList();
-
-        if (points.Count > 0)
-        {
-            var round = await grammar.BuildDrillAsync(points, ct);
-            cards.AddRange(round.Questions.Select(Card));
-        }
-
         if (cards.Count == 0) throw new DailyException("Nothing to drill.");
 
         // Mixed again: the drill is the same game, not a different one
@@ -258,13 +237,7 @@ public class DailyService(
                 }
 
                 default:
-                {
-                    var round = await grammar.BuildSliceAsync(
-                        share.Count, ignoreRests, exclude?.Grammar, ct);
-
-                    cards.AddRange(round.Questions.Select(Card));
-                    break;
-                }
+                    throw new DailyException($"The day's round has no track called {kind}.");
             }
         }
 
@@ -293,16 +266,6 @@ public class DailyService(
         AnswerLabel: question.AnswerLabel,
         Tiles: question.Tiles,
         Direction: question.Direction.ToString());
-
-    private static DailyCard Card(GrammarQuestion question) => new(
-        Kind: "grammar",
-        Track: "grammar",
-        Label: "Grammar · build the sentence",
-        Token: question.Token,
-        Typed: false,
-        Prompt: question.Prompt,
-        Pattern: question.Pattern,
-        Tiles: question.Tiles);
 
     // --------------------------------------------------------------- odds and ends
 
@@ -343,8 +306,5 @@ public class DailyService(
             recent.Where(r => r.Kind == "vocab" && r.Direction == direction.ToString())
                   .Select(r => r.Id)
                   .ToHashSet();
-
-        public IReadOnlySet<int> Grammar =>
-            recent.Where(r => r.Kind == "grammar").Select(r => r.Id).ToHashSet();
     }
 }

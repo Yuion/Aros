@@ -227,6 +227,40 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     }
 
     /// <summary>
+    /// Sentences finished in every mode the trainer asks in, which is the only sense in which a
+    /// sentence is done. The old count was one per (sentence, mode) and read 429 beside a library
+    /// of 173 — and it counted retired sentences three times over.
+    ///
+    /// A sentence is counted only against the modes it is eligible for: one without English is
+    /// never asked for English, and waiting for a mode that will never come would leave it
+    /// permanently unfinished.
+    /// </summary>
+    public async Task<(int Mastered, int Total, int Retired)> CoverageAsync(CancellationToken ct)
+    {
+        var clips = await AudibleClipsAsync(ct);
+        var audible = await AudibleFormsAsync(clips, ct);
+
+        var eligibleIn = Asked.ToDictionary(
+            mode => mode,
+            mode => Eligible(clips, mode, audible).Select(c => c.Id).ToHashSet());
+
+        var mastered = 0;
+
+        foreach (var clip in clips)
+        {
+            if (clip.RetiredAt is not null) { mastered++; continue; }
+
+            var modes = Asked.Where(m => eligibleIn[m].Contains(clip.Id)).ToList();
+            if (modes.Count == 0) continue;
+
+            if (modes.All(m => Stat(clip, m) is { } stat && Schedule(stat).IsMastered(stat.ConsecutiveCorrect)))
+                mastered++;
+        }
+
+        return (mastered, clips.Count, clips.Count(c => c.RetiredAt is not null));
+    }
+
+    /// <summary>
     /// The sentences that can be heard. One kept without audio — a synthesis that failed — is not
     /// a question anyone can answer, so it waits in the library until it has a voice.
     /// </summary>
