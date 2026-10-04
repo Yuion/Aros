@@ -17,7 +17,9 @@
         <button class="ghost" title="Show what the tutor is told about you" @click="showContext">Context</button>
         <button class="ghost" :disabled="busy" @click="courseFile?.click()">Import course file</button>
         <input ref="courseFile" type="file" accept=".json,application/json" hidden @change="importCourse" />
-        <button class="ghost" :disabled="busy || !messages.length" @click="endLesson">
+        <!-- Reachable whenever a lesson is running, thread or no thread: a lesson that cannot be
+             ended is one the page goes on claiming is under way -->
+        <button class="ghost" :disabled="busy || (!messages.length && !lessonRunning)" @click="endLesson">
           {{ ending ? 'Writing it up…' : 'End lesson' }}
         </button>
         <button class="ghost" :disabled="busy" @click="newConversation">New thread</button>
@@ -375,7 +377,8 @@ async function endLesson() {
   importReport.value = ''
 
   try {
-    await api.post('/tutor/lesson/end')
+    const r = await api.post('/tutor/lesson/end')
+    if (r?.recorded === false) importReport.value = r.message
     await load()
   } catch (e) {
     error.value = e.message

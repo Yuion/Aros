@@ -117,7 +117,7 @@ public class TutorController(
         // shapes the lesson.
         await weakPoints.SweepAsync(ct);
 
-        var runtime = await runtimeService.ResetAsync(ct);
+        var runtime = await runtimeService.StartAsync(ct);
 
         return Ok(Describe(runtime));
     }
@@ -129,6 +129,17 @@ public class TutorController(
     [HttpPost("lesson/end")]
     public async Task<IActionResult> EndLesson(CancellationToken ct)
     {
+        // A lesson nothing was said in has nothing to write up, and asking the model to write one
+        // anyway fails — which used to leave the lesson marked as running with no way to end it.
+        var settings = await tutor.SettingsAsync(ct);
+
+        if (settings.ConversationRef is not { Length: > 0 })
+        {
+            await runtimeService.CloseAsync(await runtimeService.CurrentAsync(ct), ct);
+
+            return Ok(new { recorded = false, message = "Nothing was said in that lesson, so there was nothing to write up." });
+        }
+
         try
         {
             await budget.RequireHeadroomAsync(ct);

@@ -204,7 +204,13 @@ public class LessonRuntimeService(AppDbContext db)
         await db.SaveChangesAsync(ct);
     }
 
-    /// <summary>A fresh lesson: a new id, nothing pending, nothing yet introduced.</summary>
+    /// <summary>
+    /// A clean slate: a new id, nothing pending, nothing yet introduced — and no lesson running.
+    ///
+    /// Clearing and starting are two things. They were one while a lesson was defined by the
+    /// minutes asked for, because clearing left that unset; now that a lesson is defined by
+    /// having a start time, clearing the thread was quietly starting one that nobody was in.
+    /// </summary>
     public async Task<LessonRuntime> ResetAsync(CancellationToken ct)
     {
         var runtime = await CurrentAsync(ct);
@@ -225,6 +231,18 @@ public class LessonRuntimeService(AppDbContext db)
         runtime.ExercisesSentThisLesson = [];
         runtime.NewVocabularyThisLesson = [];
         runtime.NewGrammarThisLesson = [];
+        runtime.StartedAt = null;
+        runtime.Phase = LessonPhase.Idle;
+
+        await db.SaveChangesAsync(ct);
+        return runtime;
+    }
+
+    /// <summary>A lesson begins: the slate is cleared, and the clock the page reads starts.</summary>
+    public async Task<LessonRuntime> StartAsync(CancellationToken ct)
+    {
+        var runtime = await ResetAsync(ct);
+
         runtime.StartedAt = DateTime.UtcNow;
         runtime.Phase = LessonPhase.Input;
 
