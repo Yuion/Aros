@@ -38,6 +38,19 @@
 
     <p v-if="text.notes" class="notes">{{ text.notes }}</p>
 
+    <!-- These are in the vocabulary now, so they will be drilled whether or not this text is ever
+         opened again. Worth saying plainly rather than leaving in a footnote. -->
+    <div v-if="text.newWords?.length" class="learned">
+      <h4>Added to your vocabulary</h4>
+      <ul>
+        <li v-for="w in text.newWords" :key="w">{{ w }}</li>
+      </ul>
+      <p class="learned-note">
+        Marked for review, the way a lesson's new words are — confirm the readings on the
+        <RouterLink to="/vocab">vocabulary page</RouterLink> and they enter the rotation.
+      </p>
+    </div>
+
     <!-- The answer key. Nothing opens it but a press. -->
     <div v-if="showEnglish" class="english">
       <h4>The tutor's translation</h4>
@@ -60,6 +73,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 
 const props = defineProps({
   text: { type: Object, required: true },
@@ -174,6 +188,32 @@ h4 {
   border-radius: 7px;
   font-size: 0.8rem;
   color: #78350f;
+}
+
+.learned {
+  margin-top: 0.7rem;
+  padding: 0.55rem 0.75rem;
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+  border-radius: 7px;
+  font-size: 0.82rem;
+}
+
+.learned ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.learned-note {
+  margin-top: 0.4rem;
+  font-size: 0.72rem;
+  color: #6b7280;
+}
+
+.learned-note a {
+  color: #6d5bd0;
 }
 
 .english {

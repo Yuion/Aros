@@ -117,8 +117,17 @@ public static class TurnSchema
                 + "for it, so it is the answer key: make it a faithful translation rather than a "
                 + "paraphrase."),
             ["notes"] = Text(
-                "Anything worth knowing before starting: a word used that is new, a construction "
-                + "that will trip them up. Empty string when there is nothing to say."),
+                "Anything worth knowing before starting: a construction that will trip them up, "
+                + "a turn of phrase. Empty string when there is nothing to say."),
+            ["new_words"] = Array(Object(new JsonObject
+            {
+                ["characters"] = Text("The word, in characters."),
+                ["pinyin"] = Text(
+                    "Its dictionary reading in tone numbers, syllables spaced: xian4 zai4. This "
+                    + "is what the learner will be drilled on, so it must be the standard "
+                    + "reading of the word on its own, not the sandhi form it takes in the text."),
+                ["english"] = Text("What it means. Alternatives separated by a slash."),
+            })),
             ["words_used"] = Array(Text("Vocabulary from the learner's own list that this text uses.")),
             ["grammar_used"] = Array(Text("Grammar patterns from the learner's own list that this text uses.")),
         }), "The text being set this turn, or null when not setting one."),

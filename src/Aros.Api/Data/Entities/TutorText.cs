@@ -42,6 +42,15 @@ public class TutorText
     public List<string> GrammarUsed { get; set; } = [];
 
     /// <summary>
+    /// Words this text brought in that the learner did not have, as "来 · lai2 · to come".
+    ///
+    /// Recorded here as well as in the vocabulary because the two answer different questions:
+    /// the vocabulary says what is known now, this says where it came from. A word met once in a
+    /// text and never again is the failure this list exists to make visible.
+    /// </summary>
+    public List<string> NewWords { get; set; } = [];
+
+    /// <summary>
     /// The audio file, once it has been asked for. Empty until then: speaking a text costs money
     /// and most texts are read once, so it is a button rather than something that happens.
     /// </summary>

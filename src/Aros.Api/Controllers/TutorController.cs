@@ -505,6 +505,7 @@ public class TutorController(
         text.Notes,
         text.WordsUsed,
         text.GrammarUsed,
+        text.NewWords,
         text.CreatedAt,
         text.SpokenAt,
         hasAudio = text.AudioLocation.Length > 0,

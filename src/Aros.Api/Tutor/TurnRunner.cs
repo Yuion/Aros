@@ -28,6 +28,7 @@ public class TurnRunner(
     TutorService tutor,
     LessonRuntimeService runtimeService,
     ExerciseGuard guard,
+    Vocab.VocabImporter vocabulary,
     AiBudget budget,
     ILogger<TurnRunner> logger)
 {
@@ -178,10 +179,44 @@ public class TurnRunner(
             GrammarUsed = [.. Strings(proposed["grammar_used"])],
         };
 
+        // A word the text introduces is a word to learn, not a footnote. It goes into the
+        // vocabulary the same way a lesson write-up's does — marked for review, because a reading
+        // nobody has checked is never drilled in — so the trainers pick it up from the next
+        // session and it is not met once and lost.
+        text.NewWords = await LearnAsync(proposed["new_words"], ct);
+
         db.TutorTexts.Add(text);
         await db.SaveChangesAsync(ct);
 
         return text;
+    }
+
+    /// <summary>
+    /// Adds the words a text brought in to the vocabulary, and returns them as they were filed.
+    /// The importer owns the rules — normalised reading, one word per characters-and-reading pair,
+    /// an existing entry under another reading left alone — so this only has to hand it rows.
+    /// </summary>
+    private async Task<List<string>> LearnAsync(JsonNode? node, CancellationToken ct)
+    {
+        var rows = (node?.AsArray() ?? [])
+            .Select(w => (
+                Characters: w?["characters"]?.GetValue<string>()?.Trim() ?? "",
+                Pinyin: w?["pinyin"]?.GetValue<string>()?.Trim() ?? "",
+                English: w?["english"]?.GetValue<string>()?.Trim() ?? ""))
+            .Where(w => w.Characters.Length > 0 && w.Pinyin.Length > 0)
+            .ToList();
+
+        if (rows.Count == 0) return [];
+
+        var table = string.Join("\n", rows.Select(r => $"| {r.Characters} | {r.Pinyin} | {r.English} |"));
+        var result = await vocabulary.ImportAsync(table, ct, needsReview: true);
+
+        if (result.Conflicts.Count > 0)
+            logger.LogInformation(
+                "A text introduced {Count} word(s) already held under another reading; left alone",
+                result.Conflicts.Count);
+
+        return [.. rows.Select(r => $"{r.Characters} · {r.Pinyin} · {r.English}")];
     }
 
     private record BuiltExercise(Exercise? Exercise, string? Warning);

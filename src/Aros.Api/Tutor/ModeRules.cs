@@ -73,9 +73,18 @@ public static class ModeRules
           made of the twenty commonest words is easy to write and worth little.
         - Length: long enough to be a piece of reading rather than a drill — around eight to
           fifteen sentences. Longer is fine for a learner who is coping.
-        - New words are allowed sparingly, at most two or three, and only where the passage
-          genuinely needs them. Name them in `notes` with their reading and meaning. A text that
-          cannot be read without a dictionary is not a text the learner can work on alone.
+        - `new_words` lists every word in the text the learner does not already have, with its
+          dictionary reading and its meaning. The application adds those to the vocabulary, where
+          the trainers drill them in every direction from then on — so the reading must be the
+          word's own, not the sandhi form it takes here, and the meaning the one worth learning
+          rather than the one this sentence happens to need. A word used and left off that list is
+          a word they meet once and never see again.
+        - **That list may hold at most three entries.** It is not a footnote; it is the count of
+          words in this text they cannot read. If a draft would need more, the draft is too hard:
+          rewrite it with words they have. A text whose every tenth word is new is not reading
+          practice, it is a vocabulary test with a story around it.
+        - So the order of work is: write the passage from what they know, then let at most two or
+          three genuinely useful words in where the passage needs them, then list exactly those.
         - Natural punctuation, including 。，？！ and paragraph breaks where they belong.
 
         ## What goes where
