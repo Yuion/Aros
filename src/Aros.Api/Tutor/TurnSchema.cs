@@ -44,7 +44,91 @@ public static class TurnSchema
         "answer_in_chinese",        // a question asked in Chinese, answered in Chinese
     ];
 
+    /// <summary>What a conversation turn may be. Nothing here can set an exercise.</summary>
+    public static readonly string[] TalkActions =
+    [
+        "ANSWER_USER_QUESTION",
+        "EXPLAIN",
+    ];
+
+    /// <summary>What a text turn may be: write one, mark a translation of one, or answer about one.</summary>
+    public static readonly string[] TextActions =
+    [
+        "SEND_TEXT",
+        "MARK_TRANSLATION",
+        "ANSWER_USER_QUESTION",
+    ];
+
     public static JsonSchema Definition { get; } = new("tutor_turn", Build());
+
+    private static readonly JsonSchema TalkDefinition = new("tutor_talk", BuildTalk());
+    private static readonly JsonSchema TextDefinition = new("tutor_text", BuildText());
+
+    /// <summary>
+    /// The reply shape for the job in hand.
+    ///
+    /// Asking a model not to set exercises while handing it a field for one is a request it will
+    /// eventually decline — and it did: a conversation turned into drills within three messages.
+    /// With no exercise field in the schema there is nothing to decline.
+    /// </summary>
+    public static JsonSchema For(Data.Entities.TutorMode mode) => mode switch
+    {
+        Data.Entities.TutorMode.Talk => TalkDefinition,
+        Data.Entities.TutorMode.Text => TextDefinition,
+        _ => Definition,
+    };
+
+    private static JsonObject BuildTalk() => Object(new JsonObject
+    {
+        ["action"] = Enum(TalkActions, "Exactly one action for this turn."),
+
+        ["message"] = Text(
+            "The whole reply, in markdown. This is a conversation: answer what was asked, as "
+            + "fully as it deserves and no further. No exercises, no drills, no homework."),
+
+        ["new_vocabulary_this_turn"] = Array(
+            Text("Characters introduced in this message, if any. Usually none in a conversation.")),
+
+        ["new_grammar_this_turn"] = Array(
+            Text("Grammar patterns introduced in this message, if any.")),
+    });
+
+    private static JsonObject BuildText() => Object(new JsonObject
+    {
+        ["action"] = Enum(TextActions, "Exactly one action for this turn."),
+
+        ["message"] = Text(
+            "What the learner reads, in markdown. When sending a text, this is a line or two of "
+            + "framing at most — never the text itself, never its translation, and never its "
+            + "reading: those are fields, and the application renders them so the translation "
+            + "stays hidden until it is asked for. When marking, this is the marking."),
+
+        ["text"] = Nullable(Object(new JsonObject
+        {
+            ["title"] = Text("A few words naming the text, in English."),
+            ["chinese"] = Text(
+                "The text itself, in characters, with normal punctuation. One coherent passage — "
+                + "a story, an account of a day, a letter — not a list of unrelated sentences."),
+            ["pinyin"] = Text(
+                "The whole text's reading in tone numbers, spoken tones with sandhi, sentence by "
+                + "sentence in the same order."),
+            ["english"] = Text(
+                "Your own translation of the text. The learner does not see this until they ask "
+                + "for it, so it is the answer key: make it a faithful translation rather than a "
+                + "paraphrase."),
+            ["notes"] = Text(
+                "Anything worth knowing before starting: a word used that is new, a construction "
+                + "that will trip them up. Empty string when there is nothing to say."),
+            ["words_used"] = Array(Text("Vocabulary from the learner's own list that this text uses.")),
+            ["grammar_used"] = Array(Text("Grammar patterns from the learner's own list that this text uses.")),
+        }), "The text being set this turn, or null when not setting one."),
+
+        ["new_vocabulary_this_turn"] = Array(
+            Text("Characters introduced in this message that the learner did not already have.")),
+
+        ["new_grammar_this_turn"] = Array(
+            Text("Grammar patterns introduced in this message, if any.")),
+    });
 
     private static JsonObject Build() => Object(new JsonObject
     {

@@ -26,27 +26,33 @@
       </div>
     </header>
 
-    <!-- A lesson runs until it is ended, not until a clock says so: the length was asked for and
-         then changed nothing about what was taught -->
+    <!-- Three jobs, three sessions. The mode is fixed when the session starts, because what the
+         tutor may reply with is a different schema in each — a conversation has no field for an
+         exercise, so it cannot drift into setting them. -->
     <section v-if="state && !lessonRunning" class="card start">
-      <h2>Start the next lesson</h2>
-      <p class="card-note">
-        Clears anything left pending, then asks the tutor to teach the next thing on the
-        syllabus. It runs until you press End lesson.
-      </p>
+      <h2>Start a session</h2>
       <p v-if="state.syllabus?.total" class="card-note goal">
         Working towards <strong>HSK{{ state.syllabus.level }}</strong> —
         {{ state.syllabus.taught }} of {{ state.syllabus.total }} words.
       </p>
-      <button class="start-lesson" :disabled="busy" @click="startLesson">
-        {{ busy ? 'Starting…' : 'Start next lesson' }}
-      </button>
+
+      <ul class="modes">
+        <li v-for="mode in MODES" :key="mode.id">
+          <button class="mode" :disabled="busy" @click="startSession(mode)">
+            <span class="mode-icon">{{ mode.icon }}</span>
+            <span class="mode-name">{{ mode.label }}</span>
+            <span class="mode-note">{{ mode.note }}</span>
+          </button>
+        </li>
+      </ul>
     </section>
 
     <p v-else-if="state && lessonRunning" class="notice running">
-      Lesson under way — {{ state.runtime.minutesElapsed }}
-      {{ state.runtime.minutesElapsed === 1 ? 'minute' : 'minutes' }} in,
-      {{ state.runtime.exercisesSent }} {{ state.runtime.exercisesSent === 1 ? 'exercise' : 'exercises' }} set.
+      {{ runningLabel }} — {{ state.runtime.minutesElapsed }}
+      {{ state.runtime.minutesElapsed === 1 ? 'minute' : 'minutes' }} in<template
+        v-if="state.runtime.mode === 'lesson'">,
+        {{ state.runtime.exercisesSent }}
+        {{ state.runtime.exercisesSent === 1 ? 'exercise' : 'exercises' }} set</template>.
       <span v-if="state.runtime.plan" class="plan">{{ state.runtime.plan }}</span>
     </p>
 
@@ -145,6 +151,16 @@
           <p class="ex-state">{{ isOpen(turn.exercise) ? 'Waiting for your answer' : 'Answered' }}</p>
         </div>
 
+        <!-- A text keeps its place in the thread the way an exercise does, and renders with the
+             same component the reading page uses -->
+        <ReadingText
+          v-else-if="turn.text"
+          :text="turn.text"
+          :speaking="speakingId === turn.text.id"
+          class="in-thread"
+          @speak="speakText"
+        />
+
         <div v-else class="bubble assistant">
           <div class="md" v-html="render(turn.message.content)" />
 
@@ -200,6 +216,7 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { api } from '@/services/api'
 import { render, findTables } from '@/services/markdown'
+import ReadingText from '@/components/tutor/ReadingText.vue'
 
 const state = ref(null)
 const messages = ref([])
@@ -214,6 +231,22 @@ const courseFile = ref(null)
 const proposals = ref([])
 const ending = ref(false)
 const standing = ref('')
+const speakingId = ref(0)
+
+/** Speaking a text costs one synthesis, so it happens when asked and never on its own. */
+async function speakText(text) {
+  speakingId.value = text.id
+  error.value = ''
+
+  try {
+    await api.post(`/tutor/texts/${text.id}/speak`)
+    await load()
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    speakingId.value = 0
+  }
+}
 
 const budgetTight = computed(() => {
   const b = state.value?.budget
@@ -226,6 +259,53 @@ function isOpen(ex) {
 }
 
 const lessonRunning = computed(() => !!state.value?.runtime?.running)
+
+const runningLabel = computed(() => {
+  const mode = state.value?.runtime?.mode
+  if (mode === 'talk') return 'Conversation under way'
+  if (mode === 'text') return 'Reading session under way'
+
+  return 'Lesson under way'
+})
+
+/**
+ * The three things the tutor is for, with the message that opens each one. The opening message
+ * matters as much as the mode does: a bare "start a lesson" was read as an invitation to revise,
+ * and a bare "give me a text" produced five unrelated sentences.
+ */
+const MODES = [
+  {
+    id: 'lesson',
+    icon: '🧑‍🏫',
+    label: 'Lesson',
+    note: 'New material from the syllabus, then practice of it',
+    opening:
+      'Start the next lesson. Begin with something new from the syllabus — a word or a pattern I '
+      + 'have not had yet — introduce it properly, then practise it with me. Keep going until I '
+      + 'say the lesson is over; there is no time limit.',
+  },
+  {
+    id: 'talk',
+    icon: '💬',
+    label: 'Conversation',
+    note: 'Ask questions, clear up what is still open. No exercises',
+    opening:
+      'I want to talk rather than be taught. I have questions about things that are still not '
+      + 'clear to me. Answer them properly and set me nothing to do — no exercises, no drills. '
+      + 'Start by asking me what is on my mind.',
+  },
+  {
+    id: 'text',
+    icon: '📜',
+    label: 'Reading text',
+    note: 'One long coherent passage to translate yourself',
+    opening:
+      'Write me one long coherent text in Chinese to translate into English. Use as much of my '
+      + 'vocabulary and grammar as you can fit in naturally, including the words that have not '
+      + 'come up lately — not just the commonest ones. Do not put the text, its reading or its '
+      + 'translation in your message; they go in the fields.',
+  },
+]
 
 const lastFailed = computed(() => {
   const last = messages.value[messages.value.length - 1]
@@ -447,10 +527,11 @@ function pretty(payload) {
  * nobody ended is a lesson nobody recorded.
  */
 /**
- * Begins a lesson. It clears whatever was pending from last time, so a lesson never starts
- * halfway through an exercise nobody finished, and then sends the opening message.
+ * Begins a session in one of the three modes. It clears whatever was pending from last time, so
+ * a session never starts halfway through an exercise nobody finished, and then sends the opening
+ * message — which is what actually makes the tutor begin.
  */
-async function startLesson() {
+async function startSession(mode) {
   if (busy.value) return
 
   busy.value = true
@@ -458,7 +539,7 @@ async function startLesson() {
   importReport.value = ''
 
   try {
-    await api.post('/tutor/lesson/start')
+    await api.post('/tutor/lesson/start', { mode: mode.id })
     await load()
   } catch (e) {
     error.value = e.message
@@ -469,15 +550,7 @@ async function startLesson() {
 
   // Sent as your own message so the thread reads as a conversation rather than a control panel.
   // Resetting the runtime only clears the slate; this is what makes the tutor actually begin.
-  //
-  // It says what the lesson is for, because a bare "start a lesson" was read as an invitation to
-  // revise. New material first, then practice of that material, and no winding down until asked:
-  // there is no clock any more, so nothing else would tell it when to stop.
-  await ask(
-    'Start the next lesson. Begin with something new from the syllabus — a word or a pattern I '
-    + 'have not had yet — introduce it properly, then practise it with me. Keep going until I '
-    + 'say the lesson is over; there is no time limit.',
-  )
+  await ask(mode.opening)
 }
 
 async function newConversation() {
@@ -750,26 +823,57 @@ h1 {
   color: #4b5563;
 }
 
-.start-lesson {
-  margin-top: 0.7rem;
-  padding: 0.55rem 1.1rem;
+.modes {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+}
+
+.mode {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  width: 100%;
+  height: 100%;
+  padding: 0.75rem 0.85rem;
   font-family: inherit;
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: white;
-  background: #6d5bd0;
-  border: 2px solid #6d5bd0;
-  border-radius: 8px;
+  text-align: left;
+  background: white;
+  border: 2px solid #ddd6fe;
+  border-radius: 9px;
   cursor: pointer;
 }
 
-.start-lesson:hover:not(:disabled) {
-  background: #5c4bbd;
+.mode:hover:not(:disabled) {
+  border-color: #6d5bd0;
 }
 
-.start-lesson:disabled {
+.mode:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+.mode-icon {
+  font-size: 1.2rem;
+}
+
+.mode-name {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.mode-note {
+  font-size: 0.72rem;
+  color: #6b7280;
+  line-height: 1.45;
+}
+
+.in-thread {
+  width: 100%;
 }
 
 /* The plan is the one line that says what this hour is for */

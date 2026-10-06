@@ -76,7 +76,20 @@ public class LessonRuntimeService(AppDbContext db)
     {
         var text = new StringBuilder();
         text.AppendLine("LESSON RUNTIME STATE (authoritative for what to do this turn)");
-        text.AppendLine($"  lesson_id: {runtime.LessonId}");
+        text.AppendLine($"  session_id: {runtime.LessonId}");
+        text.AppendLine($"  session_mode: {ModeRules.Name(runtime.Mode)}");
+
+        // A conversation and a reading text have no lesson shape to report, and printing the
+        // lesson's bookkeeping at them is an invitation to start behaving like one
+        if (runtime.Mode != TutorMode.Lesson)
+        {
+            text.AppendLine(runtime.Mode == TutorMode.Talk
+                ? "  this is not a lesson: answer what is asked, set nothing to do"
+                : "  this is not a lesson: write or mark a reading text, set no exercises");
+
+            return text.ToString().TrimEnd();
+        }
+
         text.AppendLine($"  phase: {runtime.Phase.ToString().ToLowerInvariant()}");
 
         text.AppendLine(runtime.Plan.Length > 0
@@ -233,16 +246,18 @@ public class LessonRuntimeService(AppDbContext db)
         runtime.NewGrammarThisLesson = [];
         runtime.StartedAt = null;
         runtime.Phase = LessonPhase.Idle;
+        runtime.Mode = TutorMode.Lesson;
 
         await db.SaveChangesAsync(ct);
         return runtime;
     }
 
-    /// <summary>A lesson begins: the slate is cleared, and the clock the page reads starts.</summary>
-    public async Task<LessonRuntime> StartAsync(CancellationToken ct)
+    /// <summary>A session begins: the slate is cleared, and the clock the page reads starts.</summary>
+    public async Task<LessonRuntime> StartAsync(TutorMode mode, CancellationToken ct)
     {
         var runtime = await ResetAsync(ct);
 
+        runtime.Mode = mode;
         runtime.StartedAt = DateTime.UtcNow;
         runtime.Phase = LessonPhase.Input;
 

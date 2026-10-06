@@ -66,6 +66,14 @@ const routes = [
     meta: { nav: true, label: 'Tones', icon: '🎵' },
   },
   {
+    // The tutor's long texts, kept. Not a trainer: nothing here is scheduled, scored or drawn —
+    // a text is read, translated and kept because you might want it again
+    path: '/reading',
+    name: 'reading',
+    component: () => import('@/views/reading/ReadingView.vue'),
+    meta: { nav: true, label: 'Reading', icon: '📜' },
+  },
+  {
     // Practice for the hand rather than the memory, so it sits with the trainers - but it
     // records nothing the trainers read
     path: '/writing',

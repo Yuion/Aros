@@ -26,6 +26,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<WeakPoint> WeakPoints => Set<WeakPoint>();
     public DbSet<Lesson> Lessons => Set<Lesson>();
     public DbSet<TutorProposal> TutorProposals => Set<TutorProposal>();
+
+    /// <summary>Long texts to translate. Read by the reading page and nothing else — see the entity.</summary>
+    public DbSet<TutorText> TutorTexts => Set<TutorText>();
     public DbSet<LessonRuntime> LessonRuntime => Set<LessonRuntime>();
     public DbSet<Exercise> Exercises => Set<Exercise>();
     public DbSet<GrammarItem> GrammarItems => Set<GrammarItem>();
@@ -79,6 +82,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasIndex(a => new { a.Syllable, a.Tone });
             entity.HasIndex(a => a.At);
         });
+
+        // Newest first is the only order the reading page ever wants
+        modelBuilder.Entity<TutorText>(entity => entity.HasIndex(t => t.CreatedAt));
 
         modelBuilder.Entity<GrammarPoint>(entity => entity.HasIndex(g => g.Key).IsUnique());
         modelBuilder.Entity<PronunciationRule>(entity => entity.HasIndex(r => r.Key).IsUnique());

@@ -64,6 +64,12 @@ public class ChatMessage
     public string? ExerciseKey { get; set; }
 
     /// <summary>
+    /// Set when this message is a long text to translate. Same reasoning as the exercise above:
+    /// the text keeps its place in the thread rather than living in a panel that holds one.
+    /// </summary>
+    public int? TextId { get; set; }
+
+    /// <summary>
     /// Cleared from view by starting a new thread. The row stays because the day's spending is
     /// counted from it: deleting the chat would reset the budget along with it.
     /// </summary>
@@ -192,6 +198,23 @@ public class TutorProposal
 public enum LessonPhase { Idle = 0, Input = 1, Exercise = 2, Grading = 3, Reinforcement = 4 }
 
 /// <summary>
+/// What the tutor is being asked for. One model, three jobs, and the difference between them is
+/// not a matter of tone: each gets its own reply schema, so a conversation cannot return an
+/// exercise and a reading text cannot arrive as prose in the middle of a lesson.
+/// </summary>
+public enum TutorMode
+{
+    /// <summary>Teaching: new material, exercises, a write-up at the end.</summary>
+    Lesson = 0,
+
+    /// <summary>Questions and answers. No exercises at all — the trainers do the drilling.</summary>
+    Talk = 1,
+
+    /// <summary>One long coherent text to translate, built from what is already known.</summary>
+    Text = 2,
+}
+
+/// <summary>
 /// What the tutor is doing *right now*, as opposed to what the learner knows. The course state
 /// answers "who is this learner"; this answers "what am I in the middle of".
 ///
@@ -205,6 +228,9 @@ public class LessonRuntime
 
     public string LessonId { get; set; } = "";             // 2026-09-08-01
     public LessonPhase Phase { get; set; }
+
+    /// <summary>Which of the three things the tutor is doing. Fixed when the session starts.</summary>
+    public TutorMode Mode { get; set; }
     public string CurrentTopic { get; set; } = "";
 
     /// <summary>The exercise on screen, if one is.</summary>

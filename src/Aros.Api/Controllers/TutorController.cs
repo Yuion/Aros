@@ -11,6 +11,7 @@ namespace Aros.Api.Controllers;
 
 public record TutorMessageRequest(string? Text);
 public record CourseFileRequest(string? Json);
+public record StartSessionRequest(string? Mode);
 
 [ApiController]
 [Route("api/[controller]")]
@@ -23,6 +24,7 @@ public class TutorController(
     LessonRuntimeService runtimeService,
     WeakPointReview weakPoints,
     Aros.Api.Syllabus.SyllabusService syllabus,
+    Aros.Api.Tts.TtsService tts,
     AiBudget budget,
     Microsoft.Extensions.Options.IOptions<AiOptions> options) : ControllerBase
 {
@@ -45,6 +47,14 @@ public class TutorController(
             .AsNoTracking()
             .Where(e => keys.Contains(e.Key))
             .ToDictionaryAsync(e => e.Key, ct);
+
+        // Same for the texts the thread refers to: each one renders where it was set
+        var textIds = messages.Where(m => m.TextId is not null).Select(m => m.TextId!.Value).ToList();
+
+        var texts = await db.TutorTexts
+            .AsNoTracking()
+            .Where(t => textIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, ct);
 
         return Ok(new
         {
@@ -71,7 +81,7 @@ public class TutorController(
                 taught = syllabusProgress.Taught,
             },
             runtime = Describe(runtime),
-            messages = messages.Select(m => Describe(m, exercises)),
+            messages = messages.Select(m => Describe(m, exercises, texts)),
         });
     }
 
@@ -92,6 +102,7 @@ public class TutorController(
                 question = Describe(turn.Question),
                 answer = Describe(turn.Answer),
                 exercise = turn.Exercise is null ? null : Describe(turn.Exercise),
+                text = turn.Text is null ? null : Describe(turn.Text),
                 warning = turn.Warning,
             });
         }
@@ -102,22 +113,24 @@ public class TutorController(
     }
 
     /// <summary>
-    /// Begin a lesson. Clears anything left pending from last time, so a lesson never starts
-    /// halfway through an exercise nobody finished.
+    /// Begin a session, in one of the three modes. Clears anything left pending from last time,
+    /// so a session never starts halfway through an exercise nobody finished.
     ///
     /// No length is asked for any more. The tutor was told how many minutes were wanted and how
     /// far through it was, and it changed nothing: a lesson ran as long as it ran. A number that
     /// steers nothing is a question not worth asking.
     /// </summary>
     [HttpPost("lesson/start")]
-    public async Task<IActionResult> StartLesson(CancellationToken ct)
+    public async Task<IActionResult> StartLesson([FromBody] StartSessionRequest? request, CancellationToken ct)
     {
+        var mode = ParseMode(request?.Mode);
+
         // Before the tutor is told what you are weak at, the trainers get to say which of those
         // weaknesses they have since disproved. Otherwise a problem fixed a fortnight ago still
         // shapes the lesson.
-        await weakPoints.SweepAsync(ct);
+        if (mode == TutorMode.Lesson) await weakPoints.SweepAsync(ct);
 
-        var runtime = await runtimeService.StartAsync(ct);
+        var runtime = await runtimeService.StartAsync(mode, ct);
 
         return Ok(Describe(runtime));
     }
@@ -129,13 +142,26 @@ public class TutorController(
     [HttpPost("lesson/end")]
     public async Task<IActionResult> EndLesson(CancellationToken ct)
     {
+        var runtime = await runtimeService.CurrentAsync(ct);
+
+        // Only a lesson is written up. A conversation has nothing to record — the trainers hold
+        // the practice and the course holds the material — and a reading text is already saved
+        // as itself, so asking the model to summarise either is a bill for nothing.
+        if (runtime.Mode != TutorMode.Lesson)
+        {
+            var what = ModeRules.Name(runtime.Mode);
+            await runtimeService.CloseAsync(runtime, ct);
+
+            return Ok(new { recorded = false, message = $"Ended the {what}. Only lessons are written up." });
+        }
+
         // A lesson nothing was said in has nothing to write up, and asking the model to write one
         // anyway fails — which used to leave the lesson marked as running with no way to end it.
         var settings = await tutor.SettingsAsync(ct);
 
         if (settings.ConversationRef is not { Length: > 0 })
         {
-            await runtimeService.CloseAsync(await runtimeService.CurrentAsync(ct), ct);
+            await runtimeService.CloseAsync(runtime, ct);
 
             return Ok(new { recorded = false, message = "Nothing was said in that lesson, so there was nothing to write up." });
         }
@@ -146,7 +172,7 @@ public class TutorController(
             var proposal = await recorder.RecordAsync(ct);
 
             // The write-up is the end of the lesson: the page goes back to offering the next one
-            await runtimeService.CloseAsync(await runtimeService.CurrentAsync(ct), ct);
+            await runtimeService.CloseAsync(runtime, ct);
 
             return Ok(Describe(proposal));
         }
@@ -154,6 +180,81 @@ public class TutorController(
         {
             return BadRequest(new { message = ex.Message });
         }
+    }
+
+    /// <summary>
+    /// Every text the tutor has written, newest first. They are kept whatever you thought of them
+    /// at the time — deciding later that one was good is no use if it was never written down.
+    /// </summary>
+    [HttpGet("texts")]
+    public async Task<IActionResult> Texts(CancellationToken ct)
+    {
+        var texts = await db.TutorTexts
+            .AsNoTracking()
+            .OrderByDescending(t => t.CreatedAt)
+            .ToListAsync(ct);
+
+        return Ok(texts.Select(Describe));
+    }
+
+    [HttpGet("texts/{id:int}")]
+    public async Task<IActionResult> Text(int id, CancellationToken ct)
+    {
+        var text = await db.TutorTexts.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct);
+
+        return text is null ? NotFound() : Ok(Describe(text));
+    }
+
+    /// <summary>
+    /// Speaks a text, once. The file is named after its own content and belongs to this text
+    /// alone: it is not a listening sentence, gets no score, and is never drawn by a trainer.
+    /// </summary>
+    [HttpPost("texts/{id:int}/speak")]
+    public async Task<IActionResult> SpeakText(int id, CancellationToken ct)
+    {
+        var text = await db.TutorTexts.FirstOrDefaultAsync(t => t.Id == id, ct);
+        if (text is null) return NotFound();
+
+        try
+        {
+            text.AudioLocation = await tts.SpeakFragmentAsync(text.Chinese, ct);
+            text.SpokenAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+
+            return Ok(Describe(text));
+        }
+        catch (Tts.TtsException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpGet("texts/{id:int}/audio")]
+    public async Task<IActionResult> TextAudio(int id, CancellationToken ct)
+    {
+        var text = await db.TutorTexts.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct);
+
+        if (text is null || text.AudioLocation.Length == 0 || !tts.FileExists(text.AudioLocation))
+            return NotFound();
+
+        return File(tts.OpenFile(text.AudioLocation), "audio/mpeg", enableRangeProcessing: true);
+    }
+
+    /// <summary>
+    /// Forgets a text. The audio file is left alone: it is named after its content, so another
+    /// text with the same words would want the very same file, and the sweeper is the one place
+    /// that decides a file is unreferenced.
+    /// </summary>
+    [HttpDelete("texts/{id:int}")]
+    public async Task<IActionResult> DeleteText(int id, CancellationToken ct)
+    {
+        var text = await db.TutorTexts.FirstOrDefaultAsync(t => t.Id == id, ct);
+        if (text is null) return NotFound();
+
+        db.TutorTexts.Remove(text);
+        await db.SaveChangesAsync(ct);
+
+        return Ok(new { deleted = true });
     }
 
     [HttpGet("proposals")]
@@ -390,9 +491,39 @@ public class TutorController(
         answered = exercise.AnsweredAt is not null,
     };
 
+    /// <summary>
+    /// A text as the page needs it. The translation travels with it rather than behind a second
+    /// call — it is the answer key, and hiding it is the page's job, not the network's.
+    /// </summary>
+    private static object Describe(TutorText text) => new
+    {
+        text.Id,
+        text.Title,
+        text.Chinese,
+        text.Pinyin,
+        text.English,
+        text.Notes,
+        text.WordsUsed,
+        text.GrammarUsed,
+        text.CreatedAt,
+        text.SpokenAt,
+        hasAudio = text.AudioLocation.Length > 0,
+        audioUrl = text.AudioLocation.Length > 0 ? $"/api/tutor/texts/{text.Id}/audio" : null,
+        characters = text.Chinese.Count(c => c >= 0x4E00 && c <= 0x9FFF),
+    };
+
+    /// <summary>The mode names the page sends. Anything unrecognised is a lesson.</summary>
+    private static TutorMode ParseMode(string? mode) => (mode ?? "").Trim().ToLowerInvariant() switch
+    {
+        "talk" or "conversation" => TutorMode.Talk,
+        "text" or "reading" => TutorMode.Text,
+        _ => TutorMode.Lesson,
+    };
+
     private static object Describe(LessonRuntime runtime) => new
     {
         lessonId = runtime.LessonId,
+        mode = runtime.Mode.ToString().ToLowerInvariant(),
         phase = runtime.Phase.ToString(),
         running = runtime.StartedAt is not null,
         minutesElapsed = runtime.StartedAt is { } at ? (int)(DateTime.UtcNow - at).TotalMinutes : (int?)null,
@@ -420,7 +551,10 @@ public class TutorController(
         await Response.Body.FlushAsync(ct);
     }
 
-    private static object Describe(ChatMessage message, IReadOnlyDictionary<string, Data.Entities.Exercise> exercises)
+    private static object Describe(
+        ChatMessage message,
+        IReadOnlyDictionary<string, Data.Entities.Exercise> exercises,
+        IReadOnlyDictionary<int, TutorText>? texts = null)
     {
         var described = Describe(message);
 
@@ -428,7 +562,11 @@ public class TutorController(
             ? Describe(exercise)
             : null;
 
-        return new { message = described, exercise = carried };
+        var text = message.TextId is { } id && texts is not null && texts.TryGetValue(id, out var found)
+            ? Describe(found)
+            : null;
+
+        return new { message = described, exercise = carried, text };
     }
 
     private static object Describe(ChatMessage message) => new

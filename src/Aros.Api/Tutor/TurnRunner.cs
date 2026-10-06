@@ -7,7 +7,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Aros.Api.Tutor;
 
-public record TurnResult(ChatMessage Question, ChatMessage Answer, Exercise? Exercise, string? Warning);
+public record TurnResult(
+    ChatMessage Question,
+    ChatMessage Answer,
+    Exercise? Exercise,
+    string? Warning,
+    TutorText? Text = null);
 
 /// <summary>
 /// One turn of a lesson, start to finish.
@@ -55,8 +60,11 @@ public class TurnRunner(
         {
             var (turn, reply) = await AskAsync(settings, runtime, message, ct);
 
+            // Only a lesson can set one. In the other modes the schema has no field for it, so
+            // this reads null rather than being refused.
             var exercise = await BuildExerciseAsync(turn, runtime, ct);
             var warning = exercise?.Warning;
+            var reading = await BuildTextAsync(turn, runtime, ct);
 
             var answer = new ChatMessage
             {
@@ -86,6 +94,19 @@ public class TurnRunner(
                 });
             }
 
+            // A text takes its own place in the thread for the same reason an exercise does
+            if (reading is not null)
+            {
+                db.ChatMessages.Add(new ChatMessage
+                {
+                    Role = ChatRole.Assistant,
+                    Content = "",
+                    TextId = reading.Id,
+                    Model = reply.Model,
+                    LessonId = runtime.LessonId,
+                });
+            }
+
             settings.ConversationStartedAt ??= DateTime.UtcNow;
             settings.ConversationRef = reply.ResponseId;
             settings.LastUsedAt = DateTime.UtcNow;
@@ -93,7 +114,7 @@ public class TurnRunner(
 
             await ApplyAsync(turn, runtime, exercise?.Exercise, ct);
 
-            return new TurnResult(question, answer, exercise?.Exercise, warning);
+            return new TurnResult(question, answer, exercise?.Exercise, warning, reading);
         }
         catch (Exception ex)
         {
@@ -111,6 +132,10 @@ public class TurnRunner(
     {
         var instructions = await InstructionsAsync(ct);
 
+        // What this session is for, stated where it can contradict the standing instructions
+        if (ModeRules.For(runtime.Mode) is { } rules)
+            instructions = string.Join("\n\n", instructions, rules);
+
         // Grading needs the answers the model had in mind. Relying on it to remember them across a
         // long thread is the kind of recall this whole design exists to stop depending on.
         if (await PendingAsync(runtime, ct) is { } pending)
@@ -119,7 +144,8 @@ public class TurnRunner(
             instructions = string.Join("\n\n", instructions, describe);
         }
 
-        var reply = await client.SendAsync(instructions, message, settings.ConversationRef, ct, TurnSchema.Definition);
+        var reply = await client.SendAsync(
+            instructions, message, settings.ConversationRef, ct, TurnSchema.For(runtime.Mode));
 
         return (Parse(reply.Text), reply);
     }
@@ -128,6 +154,35 @@ public class TurnRunner(
         runtime.AnsweringExerciseKey is { Length: > 0 } key
             ? await db.Exercises.AsNoTracking().FirstOrDefaultAsync(e => e.Key == key, ct)
             : null;
+
+    /// <summary>
+    /// Stores a text the tutor has written. Kept whatever the learner thinks of it: deciding
+    /// afterwards that one was good is no use if it was never written down.
+    /// </summary>
+    private async Task<TutorText?> BuildTextAsync(JsonNode turn, LessonRuntime runtime, CancellationToken ct)
+    {
+        if (turn["text"] is not JsonObject proposed) return null;
+
+        var chinese = (proposed["chinese"]?.GetValue<string>() ?? "").Trim();
+        if (chinese.Length == 0) return null;
+
+        var text = new TutorText
+        {
+            LessonId = runtime.LessonId,
+            Title = (proposed["title"]?.GetValue<string>() ?? "").Trim(),
+            Chinese = chinese,
+            Pinyin = (proposed["pinyin"]?.GetValue<string>() ?? "").Trim(),
+            English = (proposed["english"]?.GetValue<string>() ?? "").Trim(),
+            Notes = (proposed["notes"]?.GetValue<string>() ?? "").Trim(),
+            WordsUsed = [.. Strings(proposed["words_used"])],
+            GrammarUsed = [.. Strings(proposed["grammar_used"])],
+        };
+
+        db.TutorTexts.Add(text);
+        await db.SaveChangesAsync(ct);
+
+        return text;
+    }
 
     private record BuiltExercise(Exercise? Exercise, string? Warning);
 
