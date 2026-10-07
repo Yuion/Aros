@@ -573,11 +573,14 @@ async function startSession(mode) {
   error.value = ''
   importReport.value = ''
 
+  // Declared out here because the opening message below needs it. Inside the try it was scoped
+  // to the try, and reading it afterwards threw before the message was ever sent: the session
+  // started, the page said a lesson was under way, and the tutor had not been spoken to.
+  const wanted = mode.id === 'lesson' ? topic.value.trim() : ''
+
   try {
     // The topic belongs to a lesson. A conversation's subject is whatever you ask it, and a
     // reading text's is the vocabulary rather than a theme.
-    const wanted = mode.id === 'lesson' ? topic.value.trim() : ''
-
     await api.post('/tutor/lesson/start', { mode: mode.id, topic: wanted })
     await load()
   } catch (e) {
