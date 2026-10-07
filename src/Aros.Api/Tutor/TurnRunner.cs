@@ -119,11 +119,22 @@ public class TurnRunner(
         }
         catch (Exception ex)
         {
-            question.Failed = true;
-            question.ErrorMessage = ex.Message;
-            await db.SaveChangesAsync(ct);
-
             logger.LogError(ex, "Tutor turn failed after {Elapsed}ms", started.ElapsedMilliseconds);
+
+            // Written straight to the row rather than through the tracker. Whatever was half
+            // built when this went wrong is still tracked, and saving it again would throw the
+            // same error a second time — which is how the duplicate-key failure also lost the
+            // mark that says which message failed, leaving the thread looking like nothing
+            // happened at all.
+            db.ChangeTracker.Clear();
+
+            await db.ChatMessages
+                .Where(m => m.Id == question.Id)
+                .ExecuteUpdateAsync(
+                    m => m.SetProperty(x => x.Failed, true)
+                          .SetProperty(x => x.ErrorMessage, Short(ex.Message)),
+                    ct);
+
             throw;
         }
     }
@@ -384,6 +395,10 @@ public class TurnRunner(
         if (turn["lesson_complete"]?.GetValue<bool>() == true)
             await runtimeService.CloseAsync(runtime, ct);
     }
+
+    /// <summary>Enough of an error to recognise it by, without a stack trace in the thread.</summary>
+    private static string Short(string message) =>
+        message.Length <= 300 ? message : message[..300];
 
     private static IEnumerable<string> Strings(JsonNode? node) =>
         (node?.AsArray() ?? []).Select(n => n?.GetValue<string>() ?? "").Where(s => s.Length > 0);
