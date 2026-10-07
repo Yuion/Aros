@@ -145,6 +145,13 @@ http {
 
         location /api/ {
             proxy_pass http://127.0.0.1:5000;
+
+            # A lesson write-up is one long generation. The API allows five minutes for it;
+            # nginx's own default of 60s turned that into a 504 on "End lesson".
+            proxy_connect_timeout 10s;
+            proxy_send_timeout    300s;
+            proxy_read_timeout    300s;
+
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
         }
