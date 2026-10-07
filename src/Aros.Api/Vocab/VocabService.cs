@@ -394,7 +394,13 @@ public class VocabService(AppDbContext db, IMemoryCache cache)
 
         var asked = AnswerForm(direction);
 
-        if (asked != "pinyin" && word.Pinyin.Length > 0 && AnswerCheck.PinyinMatches(word.Pinyin, text))
+        // Tones are not required to recognise the slip. Asked for the English and given "hai",
+        // the answer is still the reading of 还 and still the wrong question answered — while the
+        // other way round always worked, because English never had a tone to get wrong. That
+        // asymmetry meant one direction gave a free retry and the other marked you down.
+        if (asked != "pinyin" && word.Pinyin.Length > 0
+            && (AnswerCheck.PinyinMatches(word.Pinyin, text)
+                || AnswerCheck.IsToneOnlyMistake(word.Pinyin, text)))
             return "pinyin";
 
         if (asked != "english" && word.English.Length > 0 && AnswerCheck.EnglishMatches(word.English, text))

@@ -19,6 +19,7 @@
     </header>
 
     <p v-if="error" class="error">{{ error }}</p>
+    <p v-if="note" class="note">{{ note }}</p>
     <p v-else-if="loading" class="placeholder">Loading…</p>
 
     <p v-else-if="!texts.length" class="placeholder">
@@ -36,9 +37,11 @@
         :key="text.id"
         :text="text"
         :speaking="speakingId === text.id"
+        :adding="addingId === text.id"
         deletable
         @speak="speak"
         @delete="remove"
+        @learn="learn"
       />
     </template>
   </div>
@@ -54,6 +57,8 @@ const texts = ref([])
 const loading = ref(true)
 const error = ref('')
 const speakingId = ref(0)
+const addingId = ref(0)
+const note = ref('')
 
 const withAudio = computed(() => texts.value.filter((t) => t.hasAudio).length)
 
@@ -79,6 +84,28 @@ async function speak(text) {
     error.value = e.message
   } finally {
     speakingId.value = 0
+  }
+}
+
+/**
+ * The words this text brought in, put into the vocabulary now — for a text written before they
+ * were collected automatically, or one whose words went in under a reading already on file.
+ */
+async function learn(text) {
+  addingId.value = text.id
+  error.value = ''
+
+  try {
+    const result = await api.post(`/tutor/texts/${text.id}/learn`)
+    texts.value = texts.value.map((t) => (t.id === result.text.id ? result.text : t))
+
+    note.value = result.added
+      ? `${result.added} ${result.added === 1 ? 'word' : 'words'} added, marked for review.`
+      : 'Nothing to add — the vocabulary already holds them.'
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    addingId.value = 0
   }
 }
 
@@ -130,6 +157,15 @@ h1 {
   color: #9ca3af;
   font-size: 0.88rem;
   padding: 1.5rem 0;
+}
+
+.note {
+  padding: 0.5rem 0.75rem;
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: #4b5563;
 }
 
 .error {

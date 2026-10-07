@@ -89,7 +89,7 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         // Only the picking mode needs to know what sounds like what
         var audible = mode == ListeningMode.Characters ? AudibleForms(clips, groups) : null;
 
-        var eligible = Eligible(clips, mode, audible!);
+        var eligible = Eligible(clips, mode, audible!, await ShiftingWordsAsync(ct));
 
         if (eligible.Count == 0) throw new ListeningException(NothingToAsk(mode, clips));
 
@@ -156,7 +156,7 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         var groups = await db.HomophoneGroups.AsNoTracking().ToListAsync(ct);
         var audible = mode == ListeningMode.Characters ? AudibleForms(clips, groups) : null;
 
-        var eligible = Eligible(clips, mode, audible!)
+        var eligible = Eligible(clips, mode, audible!, await ShiftingWordsAsync(ct))
             .Where(c => exclude is null || !exclude.Contains(c.Id))
             .ToList();
 
@@ -192,7 +192,7 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     {
         var clips = await AudibleClipsAsync(ct);
         var audible = await AudibleFormsAsync(clips, ct);
-        var eligible = Eligible(clips, mode, audible);
+        var eligible = Eligible(clips, mode, audible, await ShiftingWordsAsync(ct));
 
         var ready = SessionBudget.WithIntake(
             Askable(eligible, mode),
@@ -239,10 +239,11 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     {
         var clips = await AudibleClipsAsync(ct);
         var audible = await AudibleFormsAsync(clips, ct);
+        var vocabulary = await ShiftingWordsAsync(ct);
 
         var eligibleIn = Asked.ToDictionary(
             mode => mode,
-            mode => Eligible(clips, mode, audible).Select(c => c.Id).ToHashSet());
+            mode => Eligible(clips, mode, audible, vocabulary).Select(c => c.Id).ToHashSet());
 
         var mastered = 0;
 
@@ -404,8 +405,14 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
             "Every sentence sounds like another one in your library, so no fair question can be built. " +
             "Add sentences that differ audibly, or loosen a sound-alike group.",
 
-        ListeningMode.Pinyin =>
+        ListeningMode.Pinyin when clips.All(c => c.Pinyin.Length == 0) =>
             "No sentence has its pinyin yet. Import sentences with pinyin and English in Chinese TTS.",
+
+        // Said plainly, because the pool being small here is the design rather than a fault
+        ListeningMode.Pinyin =>
+            "This mode only asks about sentences whose reading differs from the dictionary form of "
+            + "their words — 不 as bu2, 一 as yi4, a third tone before another. None of yours are "
+            + "waiting right now. Add sentences that contain one, or practise the other modes.",
 
         ListeningMode.Ordering when clips.Count == 0 =>
             "No sentences yet. Add some in Chinese TTS.",
@@ -562,6 +569,7 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
     {
         var clips = await AudibleClipsAsync(ct);
         var audible = await AudibleFormsAsync(clips, ct);
+        var vocabulary = await ShiftingWordsAsync(ct);
 
         var tallies = new List<Availability>();
 
@@ -570,17 +578,40 @@ public class ListeningService(AppDbContext db, IMemoryCache cache)
         // the plain one. The daily planner has its own view of the same modes - StandingAsync -
         // and that one still answers "how much of this is today's share".
         foreach (var mode in Asked)
-            tallies.Add(Tally(Eligible(clips, mode, audible), mode));
+            tallies.Add(Tally(Eligible(clips, mode, audible, vocabulary), mode));
 
         return tallies;
     }
 
+    /// <summary>
+    /// The vocabulary as dictionary readings, which is what a sentence's reading is compared
+    /// against to find a tone that moved. Words waiting for review are included: an unconfirmed
+    /// reading is not drilled, but it is still the listed form this is looking for a change from.
+    /// </summary>
+    private async Task<List<ToneShift.Entry>> ShiftingWordsAsync(CancellationToken ct) =>
+        await db.VocabWords
+            .AsNoTracking()
+            .Select(w => new ToneShift.Entry(w.Characters, w.Pinyin))
+            .ToListAsync(ct);
+
     /// <summary>Sentences a mode could ask about at all, before rests and mastery are considered.</summary>
     private static List<TtsClip> Eligible(
-        List<TtsClip> clips, ListeningMode mode, Dictionary<int, string> audible) => mode switch
+        List<TtsClip> clips,
+        ListeningMode mode,
+        Dictionary<int, string> audible,
+        IReadOnlyList<ToneShift.Entry>? vocabulary = null) => mode switch
     {
         ListeningMode.Characters => Pickable(clips, audible),
-        ListeningMode.Pinyin => clips.Where(c => c.Pinyin.Length > 0).ToList(),
+
+        // Only the sentences that are said differently from the way their words are listed. The
+        // rest are a transcription exercise: every word in them is already asked for its reading
+        // by the vocabulary trainer, in isolation, where there is nothing to get wrong but the
+        // word itself. What a sentence can test alone is sandhi.
+        ListeningMode.Pinyin => clips
+            .Where(c => c.Pinyin.Length > 0)
+            .Where(c => vocabulary is null || ToneShift.Present(c, vocabulary))
+            .ToList(),
+
         // Ordering asks for the characters themselves, so every sentence qualifies
         ListeningMode.Ordering => clips,
         _ => clips.Where(c => c.English.Length > 0).ToList(),

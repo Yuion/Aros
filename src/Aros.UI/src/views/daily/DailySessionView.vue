@@ -389,16 +389,22 @@ async function next() {
   if (endless && cards.value.length - index.value <= REFILL_AT) refill()
 }
 
-/** Whatever the new card needs before it can be answered: sound, or a cursor. */
+/**
+ * Whatever the new card needs before it can be answered: sound, and a cursor.
+ *
+ * Both, not either. A listening card that asks for the pinyin is a typed card as much as a
+ * vocabulary one is, and it was getting the audio instead of the focus — so half the session
+ * needed a click on the box before you could type.
+ */
 async function open() {
   await nextTick()
 
   if (current.value?.kind === 'listening') {
     replay()
     warmNext()
-  } else if (current.value?.typed) {
-    field.value?.focus()
   }
+
+  if (current.value?.typed) field.value?.focus()
 }
 
 function stop() {

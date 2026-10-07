@@ -67,6 +67,51 @@ public class TonesController(ToneService tones, TtsService tts) : ControllerBase
     }
 
     /// <summary>
+    /// Sets of four: one syllable in all four tones, shuffled, with the numbers to hand out.
+    /// </summary>
+    [HttpPost("sets")]
+    public async Task<IActionResult> Sets([FromQuery] int count = 5, CancellationToken ct = default)
+    {
+        try
+        {
+            var sets = await tones.BuildSetsAsync(count, ct);
+
+            return Ok(new
+            {
+                sets = sets.Select(set => new
+                {
+                    questions = set.Questions.Select(q => new
+                    {
+                        token = q.Token,
+                        audioUrl = $"/api/tones/audio/{q.Token}",
+                    }),
+                }),
+            });
+        }
+        catch (ToneException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// The syllable without its tone. A hint, not the answer: it says what was said, never which
+    /// of the four it was said in.
+    /// </summary>
+    [HttpGet("hint/{token:guid}")]
+    public IActionResult Hint(Guid token)
+    {
+        try
+        {
+            return Ok(new { syllable = tones.HintFor(token) });
+        }
+        catch (ToneException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// The sound for one question. Served by token rather than by name so the answer is not in
     /// the URL — a file called "cai4.mp3" would settle the question before it was played.
     /// </summary>

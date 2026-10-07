@@ -11,7 +11,7 @@ namespace Aros.Api.Controllers;
 
 public record TutorMessageRequest(string? Text);
 public record CourseFileRequest(string? Json);
-public record StartSessionRequest(string? Mode);
+public record StartSessionRequest(string? Mode, string? Topic);
 
 [ApiController]
 [Route("api/[controller]")]
@@ -25,6 +25,7 @@ public class TutorController(
     WeakPointReview weakPoints,
     Aros.Api.Syllabus.SyllabusService syllabus,
     Aros.Api.Tts.TtsService tts,
+    Aros.Api.Vocab.VocabImporter vocabulary,
     AiBudget budget,
     Microsoft.Extensions.Options.IOptions<AiOptions> options) : ControllerBase
 {
@@ -56,6 +57,8 @@ public class TutorController(
             .Where(t => textIds.Contains(t.Id))
             .ToDictionaryAsync(t => t.Id, ct);
 
+        var knownWords = texts.Count == 0 ? null : await KnownWordsAsync(ct);
+
         return Ok(new
         {
             configured = _options.IsConfigured,
@@ -81,7 +84,7 @@ public class TutorController(
                 taught = syllabusProgress.Taught,
             },
             runtime = Describe(runtime),
-            messages = messages.Select(m => Describe(m, exercises, texts)),
+            messages = messages.Select(m => Describe(m, exercises, texts, knownWords)),
         });
     }
 
@@ -102,7 +105,7 @@ public class TutorController(
                 question = Describe(turn.Question),
                 answer = Describe(turn.Answer),
                 exercise = turn.Exercise is null ? null : Describe(turn.Exercise),
-                text = turn.Text is null ? null : Describe(turn.Text),
+                text = turn.Text is null ? null : Describe(turn.Text, await KnownWordsAsync(ct)),
                 warning = turn.Warning,
             });
         }
@@ -130,7 +133,7 @@ public class TutorController(
         // shapes the lesson.
         if (mode == TutorMode.Lesson) await weakPoints.SweepAsync(ct);
 
-        var runtime = await runtimeService.StartAsync(mode, ct);
+        var runtime = await runtimeService.StartAsync(mode, request?.Topic, ct);
 
         return Ok(Describe(runtime));
     }
@@ -194,7 +197,9 @@ public class TutorController(
             .OrderByDescending(t => t.CreatedAt)
             .ToListAsync(ct);
 
-        return Ok(texts.Select(Describe));
+        var known = await KnownWordsAsync(ct);
+
+        return Ok(texts.Select(t => Describe(t, known)));
     }
 
     [HttpGet("texts/{id:int}")]
@@ -202,7 +207,41 @@ public class TutorController(
     {
         var text = await db.TutorTexts.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct);
 
-        return text is null ? NotFound() : Ok(Describe(text));
+        return text is null ? NotFound() : Ok(Describe(text, await KnownWordsAsync(ct)));
+    }
+
+    /// <summary>
+    /// Puts this text's words into the vocabulary, now rather than when it was written.
+    ///
+    /// The words go in as they do from a lesson: through the importer, marked for review. One
+    /// already held keeps the reading it has — the importer decides that, not this — so pressing
+    /// it twice costs nothing and pressing it on a text whose words are all known does nothing.
+    /// </summary>
+    [HttpPost("texts/{id:int}/learn")]
+    public async Task<IActionResult> LearnText(int id, CancellationToken ct)
+    {
+        var text = await db.TutorTexts.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct);
+        if (text is null) return NotFound();
+
+        var rows = text.NewWords
+            .Select(entry => entry.Split('·', StringSplitOptions.TrimEntries))
+            .Where(parts => parts.Length >= 2 && parts[0].Length > 0 && parts[1].Length > 0)
+            .Select(parts => $"| {parts[0]} | {parts[1]} | {parts.ElementAtOrDefault(2) ?? ""} |")
+            .ToList();
+
+        if (rows.Count == 0)
+            return BadRequest(new { message = "That text named no new words, so there is nothing to add." });
+
+        var result = await vocabulary.ImportAsync(string.Join("\n", rows), ct, needsReview: true);
+
+        return Ok(new
+        {
+            added = result.Added,
+            updated = result.Updated,
+            unchanged = result.Unchanged,
+            conflicts = result.Conflicts.Count,
+            text = Describe(text, await KnownWordsAsync(ct)),
+        });
     }
 
     /// <summary>
@@ -221,7 +260,7 @@ public class TutorController(
             text.SpokenAt = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
 
-            return Ok(Describe(text));
+            return Ok(Describe(text, await KnownWordsAsync(ct)));
         }
         catch (Tts.TtsException ex)
         {
@@ -492,10 +531,44 @@ public class TutorController(
     };
 
     /// <summary>
+    /// The words a text brought in, split back into their parts and marked with whether the
+    /// vocabulary actually holds them.
+    ///
+    /// A text written before this existed, or one whose words were added while a different
+    /// reading of them was already on file, leaves words named in the text and missing from the
+    /// trainers. The page can only offer to put that right if it is told.
+    /// </summary>
+    private static object[] DescribeWords(TutorText text, IReadOnlySet<string>? known) =>
+    [
+        .. text.NewWords.Select(entry =>
+        {
+            var parts = entry.Split('·', StringSplitOptions.TrimEntries);
+
+            var word = parts.ElementAtOrDefault(0) ?? entry;
+
+            return (object)new
+            {
+                entry,
+                word,
+                pinyin = parts.ElementAtOrDefault(1) ?? "",
+                english = parts.ElementAtOrDefault(2) ?? "",
+                inVocabulary = known is null || known.Contains(word),
+            };
+        })
+    ];
+
+    /// <summary>The characters out of "来 · lai2 · to come".</summary>
+    private static string Head(string entry) =>
+        entry.Split('·', StringSplitOptions.TrimEntries).FirstOrDefault() ?? entry;
+
+    private async Task<HashSet<string>> KnownWordsAsync(CancellationToken ct) =>
+        [.. await db.VocabWords.AsNoTracking().Select(w => w.Characters).ToListAsync(ct)];
+
+    /// <summary>
     /// A text as the page needs it. The translation travels with it rather than behind a second
     /// call — it is the answer key, and hiding it is the page's job, not the network's.
     /// </summary>
-    private static object Describe(TutorText text) => new
+    private static object Describe(TutorText text, IReadOnlySet<string>? known = null) => new
     {
         text.Id,
         text.Title,
@@ -505,7 +578,8 @@ public class TutorController(
         text.Notes,
         text.WordsUsed,
         text.GrammarUsed,
-        text.NewWords,
+        newWords = DescribeWords(text, known),
+        missingWords = known is null ? 0 : text.NewWords.Count(e => !known.Contains(Head(e))),
         text.CreatedAt,
         text.SpokenAt,
         hasAudio = text.AudioLocation.Length > 0,
@@ -525,6 +599,7 @@ public class TutorController(
     {
         lessonId = runtime.LessonId,
         mode = runtime.Mode.ToString().ToLowerInvariant(),
+        topic = runtime.CurrentTopic,
         phase = runtime.Phase.ToString(),
         running = runtime.StartedAt is not null,
         minutesElapsed = runtime.StartedAt is { } at ? (int)(DateTime.UtcNow - at).TotalMinutes : (int?)null,
@@ -555,7 +630,8 @@ public class TutorController(
     private static object Describe(
         ChatMessage message,
         IReadOnlyDictionary<string, Data.Entities.Exercise> exercises,
-        IReadOnlyDictionary<int, TutorText>? texts = null)
+        IReadOnlyDictionary<int, TutorText>? texts = null,
+        IReadOnlySet<string>? known = null)
     {
         var described = Describe(message);
 
@@ -564,7 +640,7 @@ public class TutorController(
             : null;
 
         var text = message.TextId is { } id && texts is not null && texts.TryGetValue(id, out var found)
-            ? Describe(found)
+            ? Describe(found, known)
             : null;
 
         return new { message = described, exercise = carried, text };

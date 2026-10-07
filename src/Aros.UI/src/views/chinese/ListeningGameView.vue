@@ -215,9 +215,12 @@ const verdict = computed(() => {
 
 /** The ones just missed, heard again. Same round machinery, a different way of choosing it. */
 async function drill() {
-  await loadQuiz(() =>
-    api.post('/listening/quiz/drill', { clipIds: missed.value.map((m) => m.clipId), mode: mode.value })
-  )
+  // Read before the round is rebuilt, never inside the builder: loading clears the misses, and
+  // a closure that reached for them at call time found an empty list and drilled nothing.
+  const clipIds = missed.value.map((m) => m.clipId)
+  const asked = mode.value
+
+  await loadQuiz(() => api.post('/listening/quiz/drill', { clipIds, mode: asked }))
 }
 
 /** A clip from the scorecard: the round is over, so this plays it without asking anything. */
@@ -253,7 +256,10 @@ async function loadQuiz(build = null) {
     const params = new URLSearchParams({ questions: '10', mode: route.query.mode ?? 'Ordering' })
     if (route.query.sweep === 'false') params.set('sweep', 'false')
 
-    const quiz = await (build ? build() : api.post(`/listening/quiz?${params}`))
+    // Only a builder counts. "Play again" is bound straight to the click, so what arrives here
+    // is a MouseEvent — truthy, not callable, and the round died on it before it was built.
+    const source = typeof build === 'function' ? build : null
+    const quiz = await (source ? source() : api.post(`/listening/quiz?${params}`))
     mode.value = quiz.mode
     typed.value = quiz.typed
     questions.value = quiz.questions

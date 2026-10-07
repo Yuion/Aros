@@ -45,6 +45,18 @@
           </button>
         </li>
       </ul>
+
+      <!-- Left empty, the lesson is whatever the syllabus says comes next, which is the point of
+           having a syllabus. Filled in, it is the subject and the syllabus supplies the words. -->
+      <label class="topic">
+        <span class="topic-label">Topic for the lesson — optional</span>
+        <input
+          v-model="topic"
+          :disabled="busy"
+          placeholder="e.g. talking about the weather, or 了 for completed actions"
+          @keyup.enter="startSession(MODES[0])"
+        />
+      </label>
     </section>
 
     <p v-else-if="state && lessonRunning" class="notice running">
@@ -157,8 +169,10 @@
           v-else-if="turn.text"
           :text="turn.text"
           :speaking="speakingId === turn.text.id"
+          :adding="addingId === turn.text.id"
           class="in-thread"
           @speak="speakText"
+          @learn="learnText"
         />
 
         <div v-else class="bubble assistant">
@@ -232,6 +246,27 @@ const proposals = ref([])
 const ending = ref(false)
 const standing = ref('')
 const speakingId = ref(0)
+const topic = ref('')
+
+const addingId = ref(0)
+
+/** Words a text named but the vocabulary does not hold — put in on request, here or on Reading. */
+async function learnText(text) {
+  addingId.value = text.id
+  error.value = ''
+
+  try {
+    const result = await api.post(`/tutor/texts/${text.id}/learn`)
+    importReport.value = result.added
+      ? `${result.added} ${result.added === 1 ? 'word' : 'words'} added, marked for review.`
+      : 'Nothing to add — the vocabulary already holds them.'
+    await load()
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    addingId.value = 0
+  }
+}
 
 /** Speaking a text costs one synthesis, so it happens when asked and never on its own. */
 async function speakText(text) {
@@ -539,7 +574,11 @@ async function startSession(mode) {
   importReport.value = ''
 
   try {
-    await api.post('/tutor/lesson/start', { mode: mode.id })
+    // The topic belongs to a lesson. A conversation's subject is whatever you ask it, and a
+    // reading text's is the vocabulary rather than a theme.
+    const wanted = mode.id === 'lesson' ? topic.value.trim() : ''
+
+    await api.post('/tutor/lesson/start', { mode: mode.id, topic: wanted })
     await load()
   } catch (e) {
     error.value = e.message
@@ -550,7 +589,12 @@ async function startSession(mode) {
 
   // Sent as your own message so the thread reads as a conversation rather than a control panel.
   // Resetting the runtime only clears the slate; this is what makes the tutor actually begin.
-  await ask(mode.opening)
+  const opening = wanted
+    ? `${mode.opening} I would like this lesson to be about: ${wanted}.`
+    : mode.opening
+
+  topic.value = ''
+  await ask(opening)
 }
 
 async function newConversation() {
@@ -821,6 +865,35 @@ h1 {
 
 .goal {
   color: #4b5563;
+}
+
+.topic {
+  display: block;
+  margin-top: 0.8rem;
+}
+
+.topic-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #898781;
+  margin-bottom: 0.25rem;
+}
+
+.topic input {
+  width: 100%;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.topic input:focus {
+  outline: none;
+  border-color: #6d5bd0;
 }
 
 .modes {

@@ -27,6 +27,13 @@
       </button>
       <p class="hint">Press to hear it again.</p>
 
+      <!-- The syllable without its tone. It settles nothing about which of the four was said,
+           and it separates "I cannot place that sound at all" from "I cannot hear the tone". -->
+      <p class="hint-row">
+        <button v-if="!hint && !verdict" class="ghost" @click="reveal">Hint: which syllable?</button>
+        <span v-else-if="hint" class="hinted">{{ hint }} — but which tone?</span>
+      </p>
+
       <div class="tones">
         <button
           v-for="tone in 4"
@@ -55,6 +62,61 @@
       </div>
     </section>
 
+
+    <!-- --------------------------------------------------------------- sorting a set -->
+    <!-- The same four sounds together: nothing has to be recognised cold, they only have to be
+         told apart, which is a different skill from naming one tone out of the blue. -->
+    <section v-else-if="set" class="card bench">
+      <p class="count">Set {{ setIndex + 1 }} of {{ sets.length }}</p>
+      <p class="lead-in">One syllable, all four tones. Give each one its number.</p>
+
+      <ul class="cards">
+        <li v-for="(card, i) in set" :key="card.token" class="sound">
+          <button class="play small" @click="playCard(i)">{{ playingCard === i ? '♪' : '▶' }}</button>
+
+          <div class="tones">
+            <button
+              v-for="tone in 4"
+              :key="tone"
+              class="tone small"
+              :class="setClass(i, tone)"
+              :disabled="!!setVerdicts"
+              @click="assign(i, tone)"
+            >
+              <span class="mark">{{ MARKS[tone - 1] }}</span>
+              <span class="number">{{ tone }}</span>
+            </button>
+          </div>
+
+          <span v-if="setVerdicts" class="said small" lang="zh">
+            {{ setVerdicts[i].character }} <span class="pin">{{ setVerdicts[i].pinyin }}</span>
+          </span>
+        </li>
+      </ul>
+
+      <p v-if="!setVerdicts" class="hint">
+        Each number once. {{ assigned.filter(Boolean).length }} of 4 placed.
+      </p>
+
+      <button
+        v-if="!setVerdicts"
+        class="primary"
+        :disabled="!allPlaced || checking"
+        @click="checkSet"
+      >
+        {{ checking ? 'Checking…' : 'Check' }}
+      </button>
+
+      <template v-else>
+        <p class="verdict" :class="setRight === 4 ? 'right' : 'wrong'">
+          {{ setRight }} of 4 right.
+        </p>
+        <button class="primary" @click="nextSet">
+          {{ setIndex + 1 < sets.length ? 'Next set' : 'Finish' }}
+        </button>
+      </template>
+    </section>
+
     <!-- -------------------------------------------------------------------- the score -->
     <section v-else-if="finished" class="card">
       <h2>{{ score.right }} of {{ score.total }}</h2>
@@ -63,7 +125,7 @@
           ? 'Every one.'
           : 'The ones you missed come round more often from now on.' }}
       </p>
-      <button class="primary" @click="start">Again</button>
+      <button class="primary" @click="again">Again</button>
     </section>
 
     <!-- --------------------------------------------------------------------- the start -->
@@ -88,10 +150,18 @@
             {{ standing.answered }} answered so far, {{ percent(standing.accuracy) }} right.
           </template>
         </p>
-        <button class="primary" @click="start">Start</button>
+        <!-- Two different tests, so two buttons rather than a setting: naming a tone cold, and
+             telling four apart when all four are in front of you -->
+        <button class="primary" @click="start()">One at a time</button>
+        <button class="primary" @click="startSets()">Sort the four</button>
         <button v-if="standing.withAudio < standing.sounds" class="secondary" :disabled="building" @click="build">
           {{ building ? 'Speaking…' : `Speak the missing ${standing.sounds - standing.withAudio}` }}
         </button>
+        <p class="hint">
+          <strong>One at a time</strong> plays a single syllable and asks which tone it was.
+          <strong>Sort the four</strong> plays one syllable in all four, shuffled, and asks you
+          to hand out the numbers.
+        </p>
       </template>
 
       <!-- What gets mistaken for what is the whole point of keeping the answers -->
@@ -133,7 +203,27 @@ const score = ref({ right: 0, total: 0 })
 
 let askedAt = 0
 
+/** The syllable, once asked for. Never the tone — that is the question. */
+const hint = ref('')
+
+// Sorting mode: sets of four, the numbers handed out between them
+const sets = ref([])
+const setIndex = ref(0)
+const assigned = ref([0, 0, 0, 0])
+const setVerdicts = ref(null)
+const playingCard = ref(-1)
+const checking = ref(false)
+const wasSets = ref(false)
+
 const question = computed(() => (finished.value ? null : round.value[index.value] ?? null))
+
+const set = computed(() => (finished.value ? null : sets.value[setIndex.value]?.questions ?? null))
+
+const allPlaced = computed(() => assigned.value.every((tone) => tone > 0))
+
+const setRight = computed(() =>
+  (setVerdicts.value ?? []).filter((v) => v.correct).length,
+)
 
 onMounted(load)
 
@@ -159,12 +249,24 @@ async function build() {
   }
 }
 
-async function start() {
+/** Everything a fresh round of either kind needs cleared. */
+function reset() {
   error.value = ''
   verdict.value = null
+  hint.value = ''
   finished.value = false
   index.value = 0
+  round.value = []
+  sets.value = []
+  setIndex.value = 0
+  setVerdicts.value = null
+  assigned.value = [0, 0, 0, 0]
   score.value = { right: 0, total: 0 }
+}
+
+async function start() {
+  reset()
+  wasSets.value = false
 
   try {
     const result = await api.post('/tones/round')
@@ -173,6 +275,105 @@ async function start() {
   } catch (e) {
     error.value = e.message
   }
+}
+
+async function startSets() {
+  reset()
+  wasSets.value = true
+
+  try {
+    const result = await api.post('/tones/sets?count=5')
+    sets.value = result.sets
+    await playCard(0)
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
+/** "Again" means the kind you were just doing, not whichever came first. */
+function again() {
+  return wasSets.value ? startSets() : start()
+}
+
+/** The syllable, asked for by token so the page never holds the answer. */
+async function reveal() {
+  try {
+    const result = await api.get(`/tones/hint/${question.value.token}`)
+    hint.value = result.syllable
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
+async function playCard(i) {
+  const card = set.value?.[i]
+  if (!card || !player.value) return
+
+  playingCard.value = i
+
+  try {
+    player.value.src = card.audioUrl
+    await player.value.play()
+  } catch {
+    // Same as the single round: a browser that waits for a gesture gets one from the button
+  } finally {
+    playingCard.value = -1
+  }
+}
+
+/**
+ * Hands a number to one sound. Each number belongs to exactly one of the four, so giving it to a
+ * second takes it off the first rather than leaving two sounds claiming the same tone.
+ */
+function assign(card, tone) {
+  if (setVerdicts.value) return
+
+  assigned.value = assigned.value.map((held, i) =>
+    i === card ? tone : held === tone ? 0 : held,
+  )
+}
+
+async function checkSet() {
+  if (!allPlaced.value || checking.value) return
+
+  checking.value = true
+  error.value = ''
+
+  try {
+    const verdicts = []
+
+    for (const [i, card] of set.value.entries()) {
+      verdicts.push(
+        await api.post('/tones/answer', {
+          token: card.token,
+          tone: assigned.value[i],
+          durationMs: 0,
+        }),
+      )
+    }
+
+    setVerdicts.value = verdicts
+    score.value.total += 4
+    score.value.right += verdicts.filter((v) => v.correct).length
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    checking.value = false
+  }
+}
+
+async function nextSet() {
+  setVerdicts.value = null
+  assigned.value = [0, 0, 0, 0]
+
+  if (setIndex.value + 1 < sets.value.length) {
+    setIndex.value += 1
+    await playCard(0)
+    return
+  }
+
+  finished.value = true
+  await load()
 }
 
 async function play() {
@@ -212,6 +413,7 @@ async function answer(tone) {
 async function next() {
   verdict.value = null
   picked.value = 0
+  hint.value = ''
   askedAt = 0
 
   if (index.value + 1 < round.value.length) {
@@ -222,6 +424,19 @@ async function next() {
 
   finished.value = true
   await load()
+}
+
+/** In a set: the number you gave this sound, and after checking whether it was its own. */
+function setClass(card, tone) {
+  const chosen = assigned.value[card] === tone
+
+  if (!setVerdicts.value) return chosen ? 'picked' : ''
+
+  const answer = setVerdicts.value[card]
+  if (tone === answer.tone) return 'was-right'
+  if (chosen) return 'was-chosen'
+
+  return 'was-wrong'
 }
 
 /** Green on what it was, red on what you said when those differ, faded on the rest. */
@@ -343,6 +558,77 @@ h3 {
 }
 
 .tone.was-chosen .mark { color: #b91c1c; }
+
+.tone.picked {
+  border-color: #6d5bd0;
+  background: #f5f3ff;
+}
+
+/* ---------------------------------------------------------------- sorting a set */
+
+.cards {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 1rem 0 0.4rem;
+}
+
+.sound {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.play.small {
+  width: 44px;
+  height: 44px;
+  font-size: 1rem;
+}
+
+.tone.small {
+  width: 52px;
+  padding: 0.4rem 0;
+}
+
+.tone.small .mark { font-size: 1.1rem; }
+
+.said.small {
+  font-size: 1.1rem;
+  min-width: 90px;
+  text-align: left;
+}
+
+.lead-in {
+  margin: 0 0 0.3rem;
+  font-size: 0.82rem;
+  color: #6b7280;
+}
+
+.hint-row {
+  margin-top: 0.6rem;
+  min-height: 1.6rem;
+}
+
+.ghost {
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.ghost:hover { border-color: #6d5bd0; color: #6d5bd0; }
+
+.hinted {
+  font-size: 0.95rem;
+  color: #4b5563;
+}
 
 .tone:disabled { cursor: default; }
 

@@ -103,6 +103,74 @@ public class ToneService(AppDbContext db, TtsService tts, IMemoryCache cache)
         return new ToneRound(questions);
     }
 
+    /// <summary>
+    /// The other way to ask it: one syllable in all four tones, shuffled, with the four numbers
+    /// to be handed out between them.
+    ///
+    /// A different test from naming one tone out of the blue. Here nothing has to be recognised
+    /// in isolation — the four are in front of you and only have to be told apart — which is the
+    /// skill the fourth tone and the first are actually confused on.
+    /// </summary>
+    public async Task<IReadOnlyList<ToneRound>> BuildSetsAsync(int count, CancellationToken ct)
+    {
+        var complete = ToneBank.Sounds
+            .Where(Playable)
+            .GroupBy(s => s.Syllable)
+            .Where(g => g.Count() == 4)
+            .ToList();
+
+        if (complete.Count == 0)
+            throw new ToneException("No syllable has all four tones recorded yet. Build the sound bank first.");
+
+        var misses = await MissesAsync(ct);
+
+        // Weighted like everything else: the syllables you get wrong come round more often, and a
+        // set is as heavy as the heaviest sound in it
+        var picked = DrawWeight.PickWorstFirst(
+            complete,
+            Math.Clamp(count, 1, complete.Count),
+            group => group.Max(sound => Weight(sound, misses)));
+
+        var sets = new List<ToneRound>();
+
+        foreach (var group in picked)
+        {
+            var shuffled = group.OrderBy(_ => Random.Shared.Next()).ToList();
+            var questions = new List<ToneQuestion>();
+
+            foreach (var sound in shuffled)
+            {
+                var token = Guid.NewGuid();
+
+                cache.Set(
+                    CacheKey(token),
+                    new Pending { Syllable = sound.Syllable, Tone = sound.Tone },
+                    TokenLifetime);
+
+                questions.Add(new ToneQuestion(token, Location(sound)));
+            }
+
+            sets.Add(new ToneRound(questions));
+        }
+
+        return sets;
+    }
+
+    /// <summary>
+    /// The syllable with its tone stripped off: "ma" for a sound that is mā, má, mǎ or mà.
+    ///
+    /// A hint rather than the answer. Knowing the syllable settles nothing about which of the
+    /// four was said, and it rules out the other failure — hearing a sound you cannot place at
+    /// all and guessing between four tones of a syllable you never identified.
+    /// </summary>
+    public string HintFor(Guid token)
+    {
+        if (!cache.TryGetValue(CacheKey(token), out Pending? state) || state is null)
+            throw new ToneException("That round has expired. Start a new one.");
+
+        return state.Syllable;
+    }
+
     public async Task<ToneResult> AnswerAsync(Guid token, int given, int durationMs, CancellationToken ct)
     {
         if (!cache.TryGetValue(CacheKey(token), out Pending? state) || state is null)

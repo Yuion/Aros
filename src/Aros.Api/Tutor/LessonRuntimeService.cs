@@ -97,7 +97,13 @@ public class LessonRuntimeService(AppDbContext db)
             : "  lesson_plan: not set — state it this turn, in one line, and do not restate it later");
 
         if (runtime.CurrentTopic.Length > 0)
-            text.AppendLine($"  current_topic: {runtime.CurrentTopic}");
+        {
+            text.AppendLine($"  topic_requested: {runtime.CurrentTopic}");
+            text.AppendLine(
+                "  → The learner asked for this. Build the lesson around it, taking the syllabus "
+                + "words it can carry; if it genuinely cannot carry new material, say so in one "
+                + "line and teach the nearest thing that can.");
+        }
 
         if (runtime.ExerciseKey is { Length: > 0 })
         {
@@ -252,12 +258,21 @@ public class LessonRuntimeService(AppDbContext db)
         return runtime;
     }
 
-    /// <summary>A session begins: the slate is cleared, and the clock the page reads starts.</summary>
-    public async Task<LessonRuntime> StartAsync(TutorMode mode, CancellationToken ct)
+    /// <summary>
+    /// A session begins: the slate is cleared, and the clock the page reads starts.
+    /// </summary>
+    /// <param name="topic">
+    /// What this session was asked for, when anything was. Held in the runtime rather than left
+    /// in the opening message alone, because the state block is the part the instructions call
+    /// authoritative — a topic twenty turns back in the thread is a suggestion, and one here is
+    /// the subject.
+    /// </param>
+    public async Task<LessonRuntime> StartAsync(TutorMode mode, string? topic, CancellationToken ct)
     {
         var runtime = await ResetAsync(ct);
 
         runtime.Mode = mode;
+        runtime.CurrentTopic = (topic ?? "").Trim();
         runtime.StartedAt = DateTime.UtcNow;
         runtime.Phase = LessonPhase.Input;
 

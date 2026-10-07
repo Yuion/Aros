@@ -41,10 +41,19 @@
     <!-- These are in the vocabulary now, so they will be drilled whether or not this text is ever
          opened again. Worth saying plainly rather than leaving in a footnote. -->
     <div v-if="text.newWords?.length" class="learned">
-      <h4>Added to your vocabulary</h4>
+      <h4>{{ missing ? 'Words this text brought in' : 'Added to your vocabulary' }}</h4>
       <ul>
-        <li v-for="w in text.newWords" :key="w">{{ w }}</li>
+        <li v-for="w in text.newWords" :key="w.entry">
+          {{ w.entry }}
+          <span v-if="!w.inVocabulary" class="absent">not in your vocabulary</span>
+        </li>
       </ul>
+
+      <!-- A text read long after it was written is still a text with words in it -->
+      <button v-if="missing" class="ghost add" :disabled="adding" @click="$emit('learn', text)">
+        {{ adding ? 'Adding…' : `Add ${missing === 1 ? 'the missing word' : `the ${missing} missing words`}` }}
+      </button>
+
       <p class="learned-note">
         Marked for review, the way a lesson's new words are — confirm the readings on the
         <RouterLink to="/vocab">vocabulary page</RouterLink> and they enter the rotation.
@@ -78,10 +87,16 @@ import { RouterLink } from 'vue-router'
 const props = defineProps({
   text: { type: Object, required: true },
   speaking: Boolean,
+  adding: Boolean,
   deletable: Boolean,
 })
 
-defineEmits(['speak', 'delete'])
+defineEmits(['speak', 'delete', 'learn'])
+
+/** How many of this text's words the vocabulary does not hold. */
+const missing = computed(
+  () => (props.text.newWords ?? []).filter((w) => !w.inVocabulary).length,
+)
 
 const showPinyin = ref(false)
 const showEnglish = ref(false)
@@ -204,6 +219,16 @@ h4 {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
+}
+
+.absent {
+  margin-left: 0.4rem;
+  font-size: 0.7rem;
+  color: #b45309;
+}
+
+.add {
+  margin-top: 0.5rem;
 }
 
 .learned-note {
