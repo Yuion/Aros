@@ -59,12 +59,34 @@ public class ExerciseGuard(AppDbContext db)
             .FirstOrDefaultAsync(e => e.Fingerprint == fingerprint, ct);
     }
 
-    /// <summary>L11-E03: the lesson it belongs to, and its place in that lesson.</summary>
+    /// <summary>
+    /// L11-E03: the lesson it belongs to, and its place in that lesson.
+    ///
+    /// Numbered from the keys already taken rather than from this session's own count. The lesson
+    /// number does not move until a write-up is approved, so two sessions before that share it —
+    /// and counting per session started the second one at E01 again, straight into the unique
+    /// index, which is why a lesson could not be started at all while an unrecorded one existed.
+    /// A conversation never set an exercise, so it never hit it.
+    ///
+    /// The number is an identity, not an address: which session an exercise actually belongs to
+    /// is the LessonId beside it.
+    /// </summary>
     public async Task<string> NextKeyAsync(string lessonId, CancellationToken ct)
     {
         var lessonNumber = (await db.Lessons.MaxAsync(l => (int?)l.Number, ct) ?? 0) + 1;
-        var sentThisLesson = await db.Exercises.CountAsync(e => e.LessonId == lessonId, ct);
+        var prefix = $"L{lessonNumber}-E";
 
-        return $"L{lessonNumber}-E{sentThisLesson + 1:00}";
+        var taken = await db.Exercises
+            .AsNoTracking()
+            .Where(e => e.Key.StartsWith(prefix))
+            .Select(e => e.Key)
+            .ToListAsync(ct);
+
+        var highest = taken
+            .Select(key => int.TryParse(key[prefix.Length..], out var n) ? n : 0)
+            .DefaultIfEmpty(0)
+            .Max();
+
+        return $"{prefix}{highest + 1:00}";
     }
 }
