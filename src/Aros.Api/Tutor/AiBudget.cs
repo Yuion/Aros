@@ -7,7 +7,10 @@ namespace Aros.Api.Tutor;
 public record BudgetState(int TokensUsedToday, int DailyTokenBudget, int RequestsThisHour, int MaxRequestsPerHour)
 {
     public int TokensLeft => Math.Max(0, DailyTokenBudget - TokensUsedToday);
-    public bool Exhausted => TokensUsedToday >= DailyTokenBudget;
+
+    /// <summary>Past the day's tokens. A warning, not a stop — see <see cref="AiBudget"/>.</summary>
+    public bool OverBudget => TokensUsedToday >= DailyTokenBudget;
+
     public bool TooFast => RequestsThisHour >= MaxRequestsPerHour;
 }
 
@@ -17,9 +20,14 @@ public record BudgetState(int TokensUsedToday, int DailyTokenBudget, int Request
 /// page left open re-sending. Counted from the usage the model itself reports, so it measures the
 /// thing being billed rather than an estimate of it.
 ///
+/// The two halves differ in force on purpose. Requests per hour still refuses, because nothing
+/// legitimate asks that often and a loop looks exactly like that. The daily token count only
+/// warns: it is a figure worth seeing, not a reason to lock the tutor out halfway through a
+/// lesson over a number picked by guess.
+///
 /// It lives in the API rather than the page, because a guard in the client is a suggestion.
 /// </summary>
-public class AiBudget(AppDbContext db, IOptions<AiOptions> options)
+public class AiBudget(AppDbContext db, IOptions<AiOptions> options, ILogger<AiBudget> logger)
 {
     private readonly AiOptions _options = options.Value;
 
@@ -41,15 +49,18 @@ public class AiBudget(AppDbContext db, IOptions<AiOptions> options)
             _options.MaxRequestsPerHour);
     }
 
-    /// <summary>Throws rather than returning false: there is no sensible way to carry on past this.</summary>
+    /// <summary>
+    /// Throws only on the rate limit, which has no sensible way to carry on past it. Being over
+    /// the day's tokens is logged and reported in the state, and the turn goes ahead.
+    /// </summary>
     public async Task RequireHeadroomAsync(CancellationToken ct)
     {
         var state = await StateAsync(ct);
 
-        if (state.Exhausted)
-            throw new AiException(
-                $"Today's token budget is spent ({state.TokensUsedToday:N0} of {state.DailyTokenBudget:N0}). " +
-                "It resets at midnight, or raise Ai:DailyTokenBudget.");
+        if (state.OverBudget)
+            logger.LogWarning(
+                "Over today's token budget: {Used} of {Budget} used. Continuing anyway.",
+                state.TokensUsedToday, state.DailyTokenBudget);
 
         if (state.TooFast)
             throw new AiException(

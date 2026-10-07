@@ -74,6 +74,8 @@ public class TutorController(
                 used = spend.TokensUsedToday,
                 limit = spend.DailyTokenBudget,
                 left = spend.TokensLeft,
+                // Nothing refuses past the limit any more; the page says so and the log records it
+                over = spend.OverBudget,
                 requestsThisHour = spend.RequestsThisHour,
             },
             // The list the course is aiming at, so the page can say what "next lesson" is for

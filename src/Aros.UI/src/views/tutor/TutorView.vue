@@ -6,8 +6,9 @@
         <p class="subtitle">
           <template v-if="state">
             {{ state.model || 'no model configured' }}
-            <span v-if="state.budget" class="budget" :class="{ tight: budgetTight }">
+            <span v-if="state.budget" class="budget" :class="{ tight: budgetTight, over: state.budget.over }">
               · {{ state.budget.used.toLocaleString() }} / {{ state.budget.limit.toLocaleString() }} tokens today
+              <template v-if="state.budget.over">— over the day's budget</template>
             </span>
           </template>
         </p>
@@ -712,6 +713,12 @@ h1 {
 
 .budget.tight {
   color: #b45309;
+  font-weight: 600;
+}
+
+/* Over the budget is a warning, not a wall: the tutor keeps working */
+.budget.over {
+  color: #b91c1c;
   font-weight: 600;
 }
 

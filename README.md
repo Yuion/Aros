@@ -84,7 +84,8 @@ What each section is for, and what happens without it:
 | `Tts:ApiKey` | for audio | no clip can be synthesised; already-cached audio still plays |
 | `Ai:ApiKey`, `Ai:Model` | for the tutor | the tutor refuses, naming the missing setting. There is no default model: a hard-coded id goes stale and becomes a 404 on the first call of the day |
 | `Ai:FallbackModel` | no | used only when the primary answers "model not found", so a rename survives |
-| `Ai:DailyTokenBudget`, `Ai:MaxRequestsPerHour` | no | these bound a *bug* — a retry storm, a loop — rather than a stranger; the service is closed, so nobody else can spend it |
+| `Ai:MaxRequestsPerHour` | no | bounds a *bug* — a retry storm, a loop — rather than a stranger; the service is closed, so nobody else can spend it. Past it the tutor refuses |
+| `Ai:DailyTokenBudget` | no | the day's spend is shown against it and a warning is logged when it is passed, but nothing refuses: being locked out mid-lesson by a guessed number was worse than the number it saved |
 
 `Syllabus:Level` is the HSK level the tutor works towards, default 1. The word list for every
 level ships with the API, so raising the goal is this one number.
