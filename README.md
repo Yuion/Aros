@@ -1,8 +1,9 @@
 # Aros
 
-A personal Chinese-learning platform: an AI tutor that teaches lessons, and trainers that drill
-what the lessons taught — vocabulary in six directions, sentences by ear, grammar patterns from
-tiles — all scheduled by what has been missed and when.
+A personal Chinese-learning platform: an AI tutor that teaches lessons, holds a conversation or
+writes a passage to translate, and trainers that drill what the lessons taught — vocabulary in
+four directions, sentences by ear, grammar patterns from tiles, the four tones on their own, and
+characters written by hand on a tablet — all scheduled by what has been missed and when.
 
 ASP.NET Core 9 API, Vue 3 front end, PostgreSQL 17. It runs as two Windows services on one
 machine on the local network and is reachable from nowhere else.
